@@ -8,7 +8,7 @@ void app_main(void) {
     while (1) {
         // 正常工作
         oled_clear();
-        oled_show_string(16, 24, "Hello World!");
+        oled_show_string(16, 24, "design by gemini!");
         oled_refresh();
         vTaskDelay(pdMS_TO_TICKS(4000));
 
