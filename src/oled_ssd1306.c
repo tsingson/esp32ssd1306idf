@@ -279,7 +279,8 @@ void oled_fill_rectangle(int x, int y, int width, int height) {
 
   // 调整绘制边界，防止超出屏幕物理区域造成内存污染
   int x_end = (x + width - 1 >= OLED_WIDTH) ? OLED_WIDTH - 1 : x + width - 1;
-  int y_end = (y + height - 1 >= OLED_HEIGHT) ? OLED_HEIGHT - 1 : y + height - 1;
+  int y_end =
+      (y + height - 1 >= OLED_HEIGHT) ? OLED_HEIGHT - 1 : y + height - 1;
   int x_start = (x < 0) ? 0 : x;
   int y_start = (y < 0) ? 0 : y;
 
@@ -295,7 +296,6 @@ void oled_fill_rectangle(int x, int y, int width, int height) {
   }
 }
 
-
 /**
  * @brief 支持反色控制、自动换行与 \n 解析的 8x8 字符串高级显示函数
  * @param start_x 起始横向像素坐标 (0 - 127)
@@ -303,7 +303,8 @@ void oled_fill_rectangle(int x, int y, int width, int height) {
  * @param str 要显示的字符串内容
  * @param invert 反色控制：0 代表正常显示(黑底白字)；1 代表反色显示(白底黑字)
  */
-void oled_show_string_ex(int start_x, int start_y, const char *str, uint8_t invert) {
+void oled_show_string_ex(int start_x, int start_y, const char *str,
+                         uint8_t invert) {
   int current_x = start_x;
   int current_y = start_y;
 
@@ -349,7 +350,8 @@ void oled_show_string_ex(int start_x, int start_y, const char *str, uint8_t inve
 
         if (invert) {
           // 反色模式下：对字模按位取反，并且由于是要在白背景写黑字，
-          // 必须先清空（&= ~）当前位置原本可能残留的旧数据，再强制覆盖注入取反后的白背景点阵
+          // 必须先清空（&=
+          // ~）当前位置原本可能残留的旧数据，再强制覆盖注入取反后的白背景点阵
           fb[page * OLED_WIDTH + (current_x + col)] = ~font_byte;
         } else {
           // 正常模式下：保持原始增量按位或写入
@@ -408,5 +410,41 @@ void oled_draw_line(int x1, int y1, int x2, int y2, uint8_t color) {
       err += dx;
       y1 += sy;
     }
+  }
+}
+/**
+ * @brief 基于中点圆算法绘制一个标准的空心圆形 (Draw Circle)
+ * @param xc 圆心横坐标 (0 - 127)
+ * @param yc 圆心纵坐标 (0 - 63)
+ * @param r  圆的半径（像素点数，必须大于 0）
+ * @param color 1 代表点亮圆形像素，0 代表擦除圆形
+ */
+void oled_draw_circle(int xc, int yc, int r, uint8_t color) {
+  if (r <= 0)
+    return;
+
+  int x = 0;
+  int y = r;
+  int d = 3 - 2 * r; // 初始决策参数
+
+  // 🌟 利用圆的八分对称性，同时绘制 8 个镜像对称点
+  while (x <= y) {
+    oled_draw_pixel(xc + x, yc + y, color); // 第 1 象限
+    oled_draw_pixel(xc - x, yc + y, color); // 第 2 象限
+    oled_draw_pixel(xc + x, yc - y, color); // 第 3 象限
+    oled_draw_pixel(xc - x, yc - y, color); // 第 4 象限
+    oled_draw_pixel(xc + y, yc + x, color); // 第 5 象限
+    oled_draw_pixel(xc - y, yc + x, color); // 第 6 象限
+    oled_draw_pixel(xc + y, yc - x, color); // 第 7 象限
+    oled_draw_pixel(xc - y, yc - x, color); // 第 8 象限
+
+    // 核心步进决策
+    if (d < 0) {
+      d = d + 4 * x + 6;
+    } else {
+      d = d + 4 * (x - y) + 10;
+      y--;
+    }
+    x++;
   }
 }
