@@ -51,6 +51,42 @@ void app_main(void) {
     vTaskDelay(pdMS_TO_TICKS(1000));
     // 3. 将缓冲区推送到屏幕生效
     oled_refresh();
+    oled_clear();
+
+    // 1. 在屏幕顶部画一个实心填充矩形作为“标题栏背景” (宽128像素满屏，高16像素)
+    oled_fill_rectangle(0, 0, 128, 16);
+
+    // 2. ⚠️ 注意：因为原本的字库是点亮像素，如果要把字写在实心矩形里面，需要配合反色。
+    // 目前你给出的 8x8 字库显示函数是“按位或 |=”操作，它会将白字叠在白背景上导致看不清。
+    // 我们可以直接在下方绘制普通非反色区域：
+    oled_show_string(0, 24, "System Status:");
+    oled_show_string(0, 40, "Battery: 98%");
+
+    // 3. 绘制一个电量条的外框和内部实心进度
+    oled_draw_rectangle(90, 40, 30, 10);      // 电池外壳空心框
+    oled_fill_rectangle(92, 42, 22, 6);       // 内部电量实心填充（代表充满）
+
+    oled_refresh();
+
+    oled_clear();
+
+    // 案例 1：绘制一个高亮的系统标题栏
+    // 先铺一层满屏宽、8像素高的白色实心背景
+    oled_fill_rectangle(0, 0, 128, 8);
+    // 在白色背景上写入反色黑字 (invert = 1)
+    oled_show_string_ex(0, 0, "--- MAIN MENU ---", 1);
+
+
+    // 案例 2：模拟一个菜单选中项的效果
+    oled_show_string_ex(8, 24, "1. Wi-Fi Config", 0);  // 未选中项：正常白字
+
+    // 选中项：先绘制一个局部白色高亮条，覆盖第二行
+    oled_fill_rectangle(4, 40, 120, 8);
+    oled_show_string_ex(8, 40, "2. Bluetooth (X)", 1); // 选中项：白底写黑字
+
+
+    oled_refresh();
+
 
     vTaskDelay(pdMS_TO_TICKS(4000));
   }

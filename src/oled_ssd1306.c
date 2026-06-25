@@ -264,3 +264,101 @@ void oled_draw_rectangle(int x, int y, int width, int height) {
     oled_draw_pixel(x_end, j, 1); // 右边
   }
 }
+/**
+ * @brief 在指定区域绘制一个实心填充矩形 (Fill Rectangle)
+ * @param x 矩形左上角横坐标 (0 - 127)
+ * @param y 矩形左上角纵坐标 (0 - 63)
+ * @param width 矩形的宽度（像素点数）
+ * @param height 矩形的高度（像素点数）
+ */
+void oled_fill_rectangle(int x, int y, int width, int height) {
+  // 基础边界保护：非法尺寸直接退出
+  if (width <= 0 || height <= 0 || x >= OLED_WIDTH || y >= OLED_HEIGHT) {
+    return;
+  }
+
+  // 调整绘制边界，防止超出屏幕物理区域造成内存污染
+  int x_end = (x + width - 1 >= OLED_WIDTH) ? OLED_WIDTH - 1 : x + width - 1;
+  int y_end = (y + height - 1 >= OLED_HEIGHT) ? OLED_HEIGHT - 1 : y + height - 1;
+  int x_start = (x < 0) ? 0 : x;
+  int y_start = (y < 0) ? 0 : y;
+
+  // 纵向按像素行遍历，利用显存Page特性进行高速字节操作
+  for (int curr_y = y_start; curr_y <= y_end; curr_y++) {
+    int page = curr_y / 8; // 计算所在的 Page (0-7)
+    int bit = curr_y % 8;  // 计算在该 Page 字节中的具体第几位
+
+    // 横向循环：直接在这一行的所有指定 X 坐标上，将对应的 Bit 位全部置 1
+    for (int curr_x = x_start; curr_x <= x_end; curr_x++) {
+      fb[page * OLED_WIDTH + curr_x] |= (1 << bit);
+    }
+  }
+}
+
+
+/**
+ * @brief 支持反色控制、自动换行与 \n 解析的 8x8 字符串高级显示函数
+ * @param start_x 起始横向像素坐标 (0 - 127)
+ * @param start_y 起始纵向像素坐标 (0 - 63)
+ * @param str 要显示的字符串内容
+ * @param invert 反色控制：0 代表正常显示(黑底白字)；1 代表反色显示(白底黑字)
+ */
+void oled_show_string_ex(int start_x, int start_y, const char *str, uint8_t invert) {
+  int current_x = start_x;
+  int current_y = start_y;
+
+  while (*str) {
+    uint8_t c = (uint8_t)*str;
+
+    // 1. 解析标准换行符 '\n'
+    if (c == '\n') {
+      current_x = start_x;
+      current_y += 8;
+      str++;
+      continue;
+    }
+
+    // 2. 解析回车符 '\r'
+    if (c == '\r') {
+      current_x = start_x;
+      str++;
+      continue;
+    }
+
+    // 3. 边界自动换行 (Text Wrap)
+    if (current_x + 8 > OLED_WIDTH) {
+      current_x = start_x;
+      current_y += 8;
+    }
+
+    // 4. 纵向越界保护
+    if (current_y + 8 > OLED_HEIGHT) {
+      break;
+    }
+
+    if (c > 127) {
+      c = ' ';
+    }
+
+    int page = current_y / 8;
+
+    if (page >= 0 && page < 8) {
+      for (int col = 0; col < 8; col++) {
+        // 🌟 核心升级：从字库中获取原始字模字节
+        uint8_t font_byte = font8x8_basic_tr[c][col];
+
+        if (invert) {
+          // 反色模式下：对字模按位取反，并且由于是要在白背景写黑字，
+          // 必须先清空（&= ~）当前位置原本可能残留的旧数据，再强制覆盖注入取反后的白背景点阵
+          fb[page * OLED_WIDTH + (current_x + col)] = ~font_byte;
+        } else {
+          // 正常模式下：保持原始增量按位或写入
+          fb[page * OLED_WIDTH + (current_x + col)] |= font_byte;
+        }
+      }
+    }
+
+    current_x += 8;
+    str++;
+  }
+}
