@@ -38,5 +38,7 @@ void oled_draw_progress_bar(int x, int y, int width, int height, int current, in
 void oled_flash_screen(int flash_count, int delay_ms);
 // 追加屏幕震动特效接口声明
 void oled_shake_screen(int intensity, int duration_ms);
+// 追加 16x16 动态算法粗体接口声明
+void oled_show_string_16x16_bold(int start_x, int start_y, const char *str);
 
 #endif

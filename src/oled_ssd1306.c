@@ -536,3 +536,67 @@ void oled_shake_screen(int intensity, int duration_ms) {
   // 🌟 震动结束，必须执行一次标准刷新，将屏幕画面完美归位复原
   oled_refresh();
 }
+
+
+ 
+
+/**
+ * @brief 通过实时算法将 8x8 字库差值双倍放大并加粗渲染为 16x16 粗体 (16x16 Bold Font)
+ * @param start_x 渲染起始横坐标 (0 - 127)
+ * @param start_y 渲染起始纵坐标 (0 - 63)，建议为 8 的倍数（如 16, 24 等）
+ * @param str 要显示的字符串内容
+ */
+void oled_show_string_16x16_bold(int start_x, int start_y, const char *str) {
+    int current_x = start_x;
+
+    while (*str) {
+        // 🌟 16x16 字体宽度为 16 像素，如果超出屏幕边缘，自动终止防止越界
+        if (current_x + 16 > OLED_WIDTH) break;
+
+        uint8_t c = (uint8_t)*str;
+        if (c > 127) c = ' ';
+
+        // 16x16 字符在纵向上会跨越连续的 2 个 Page 页
+        int page_top = start_y / 8;
+        int page_bottom = page_top + 1;
+
+        // 横向循环：将原本 8x8 字库的 8 列，放大 2 倍映射到 16 列空间中
+        for (int col = 0; col < 8; col++) {
+            uint8_t src_byte = font8x8_basic_tr[c][col];
+
+            // 🌟 核心算法 1：纵向插值放大 (通过位移将 8 位展开为 16 位)
+            uint16_t expanded_word = 0;
+            for (int bit = 0; bit < 8; bit++) {
+                if (src_byte & (1 << bit)) {
+                    // 原本的 1 个点，变成纵向连续的 2 个点 (11)
+                    expanded_word |= (3 << (bit * 2));
+                }
+            }
+
+            // 分离出放大后的上半部 8 像素和下半部 8 像素字节
+            uint8_t top_byte = (uint8_t)(expanded_word & 0xFF);
+            uint8_t bottom_byte = (uint8_t)((expanded_word >> 8) & 0xFF);
+
+            // 🌟 核心算法 2：横向倍增 2 次 ＋ 错位按位或实现边缘加粗 (Bold)
+            for (int repeat = 0; repeat < 2; repeat++) {
+                int out_x = current_x + (col * 2) + repeat;
+
+                if (out_x < OLED_WIDTH) {
+                    if (page_top >= 0 && page_top < 8) {
+                        fb[page_top * OLED_WIDTH + out_x] |= top_byte;
+                        // 🌟 加粗逻辑：向右多复写一列
+                        if (out_x + 1 < OLED_WIDTH) fb[page_top * OLED_WIDTH + (out_x + 1)] |= top_byte;
+                    }
+                    if (page_bottom >= 0 && page_bottom < 8) {
+                        fb[page_bottom * OLED_WIDTH + out_x] |= bottom_byte;
+                        // 🌟 加粗逻辑：向右多复写一列
+                        if (out_x + 1 < OLED_WIDTH) fb[page_bottom * OLED_WIDTH + (out_x + 1)] |= bottom_byte;
+                    }
+                }
+            }
+        }
+
+        current_x += 16; // 16x16 字符横向步进 16 像素
+        str++;
+    }
+}
