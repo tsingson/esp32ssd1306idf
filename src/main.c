@@ -36,9 +36,10 @@ static void configure_wakeup_button(void) {
     ESP_ERROR_CHECK(gpio_wakeup_enable(WAKEUP_BUTTON_GPIO, GPIO_INTR_LOW_LEVEL));
 }
 
+
  /**
  * @brief SSD 屏幕数据处理与渲染任务
- * 调整后逻辑：进度条先加载至 100%，结束后上方再顺次轮播显示 1 到 10 的数字
+ * 调整后逻辑：进度条先加载至 100%，加载结束时彻底隐藏进度条，之后上方再顺次轮播显示 1 到 10 的数字
  */
 void ssd_task(void *pvParameters) {
     int received_val = 0;
@@ -47,7 +48,7 @@ void ssd_task(void *pvParameters) {
 
     while (1) {
         // ==========================================================
-        // 阶段一：进度条加载阶段 (数字显示前)
+        // 阶段一：进度条加载阶段 (此时数字还未显示)
         // ==========================================================
         // 从队列中顺次取出 10 个数，每取出一个数，进度条递增 10%
         for (int i = 1; i <= 10; i++) {
@@ -62,7 +63,7 @@ void ssd_task(void *pvParameters) {
                 // 提示当前处于加载接收阶段
                 oled_show_string_ex(0, 20, "Buffering data...", 0);
 
-                // 🌟 绘制进度条：此时上方数字还未显示，进度条先顺次递增
+                // 🌟 绘制进度条：此时进度条顺次递增
                 oled_draw_progress_bar(0, 44, 128, 12, i, 10);
 
                 oled_refresh();
@@ -73,9 +74,9 @@ void ssd_task(void *pvParameters) {
         }
 
         // ==========================================================
-        // 阶段二：数字轮播显示阶段 (进度条结束后)
+        // 阶段二：数字轮播显示阶段 (🌟 此时进度条已完全隐藏)
         // ==========================================================
-        // 此时进度条已经完全拉满 (10/10)，保持满格静止，上方开始滚动打印刚才存下的数字
+        // 进度条圆满完成任务，在此阶段不再调用 oled_draw_progress_bar，使其在屏幕上彻底隐形
         for (int j = 0; j < 10; j++) {
             // 从刚才的本地缓冲区读出数字进行格式化
             snprintf(display_str, sizeof(display_str), "queue rcv: %d", data_buffer[j]);
@@ -83,11 +84,9 @@ void ssd_task(void *pvParameters) {
 
             oled_clear();
             oled_show_string_ex(0, 0, "=== SYSTEM ===", 1);
-            // 🌟 此时在满格进度条的上方，依次显示 1 到 10
-            oled_show_string_ex(0, 20, display_str, 0);
 
-            // 🌟 进度条在此阶段始终锁定在最大值 10 (100%)，保持长亮
-            oled_draw_progress_bar(0, 44, 128, 12, 10, 10);
+            // 🌟 在干净的屏幕中央依次显示 1 到 10，下方没有任何进度条干扰
+            oled_show_string_ex(0, 28, display_str, 0);
 
             oled_refresh();
 
@@ -103,8 +102,7 @@ void ssd_task(void *pvParameters) {
 
         oled_clear();
         oled_show_string_ex(0, 0, "=== SYSTEM ===", 1);
-        oled_show_string_ex(0, 24, "Batch Complete!", 0);
-        oled_draw_progress_bar(0, 44, 128, 12, 10, 10);
+        oled_show_string_ex(0, 28, "Batch Complete!", 0); // 居中显示完成提示
         oled_refresh();
 
         // 释放二值信号量，通知 main 线程我们干完活了
@@ -115,6 +113,7 @@ void ssd_task(void *pvParameters) {
         vTaskSuspend(NULL);
     }
 }
+
 
 
 

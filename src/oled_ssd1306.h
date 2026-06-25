@@ -34,5 +34,7 @@ void oled_draw_line(int x1, int y1, int x2, int y2, uint8_t color);
 void oled_draw_circle(int xc, int yc, int r, uint8_t color);
 // 追加进度条接口声明
 void oled_draw_progress_bar(int x, int y, int width, int height, int current, int max);
+// 追加全屏转场闪烁接口声明
+void oled_flash_screen(int flash_count, int delay_ms);
 
 #endif

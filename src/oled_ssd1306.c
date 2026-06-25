@@ -477,3 +477,25 @@ void oled_draw_progress_bar(int x, int y, int width, int height, int current, in
     oled_fill_rectangle(x + 2, y + 2, fill_width, fill_height);
   }
 }
+/**
+ * @brief 全屏反色闪烁转场特效 (Flash Screen Transition)
+ * @param flash_count 闪烁的次数
+ * @param delay_ms 每次闪烁的亮灭维持时间（毫秒）
+ */
+void oled_flash_screen(int flash_count, int delay_ms) {
+  for (int k = 0; k < flash_count; k++) {
+    // 1. 第一次取反：将全屏所有像素反转（原本黑的变白，白的变黑）
+    for (int i = 0; i < OLED_WIDTH * OLED_HEIGHT / 8; i++) {
+      fb[i] = ~fb[i];
+    }
+    esp_lcd_panel_draw_bitmap(panel_hdl, 0, 0, OLED_WIDTH, OLED_HEIGHT, fb);
+    vTaskDelay(pdMS_TO_TICKS(delay_ms));
+
+    // 2. 第二次取反：再次反转，完美还原原本的显存内容
+    for (int i = 0; i < OLED_WIDTH * OLED_HEIGHT / 8; i++) {
+      fb[i] = ~fb[i];
+    }
+    esp_lcd_panel_draw_bitmap(panel_hdl, 0, 0, OLED_WIDTH, OLED_HEIGHT, fb);
+    vTaskDelay(pdMS_TO_TICKS(delay_ms));
+  }
+}
