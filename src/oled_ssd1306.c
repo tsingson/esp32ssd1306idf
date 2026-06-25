@@ -542,10 +542,7 @@ void oled_shake_screen(int intensity, int duration_ms) {
 
 
 
-#include <string.h> // 确保引入了 strlen 函数
 
-// 声明引用你的全局 8x8 字库数组
-extern uint8_t font8x8_basic_tr;
 
 /**
  * @brief 通过实时算法将 8x8 字库双倍放大并加粗渲染为 16x16 粗体（带自动居中功能）
