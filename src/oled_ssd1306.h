@@ -3,14 +3,12 @@
 
 #include "esp_err.h"
 
-// 核心硬件物理配置
 #define OLED_SDA_PIN      21
 #define OLED_SCL_PIN      22
 #define OLED_I2C_ADDR     0x3C
 #define OLED_WIDTH        128
 #define OLED_HEIGHT       64
 
-// 全局 API 接口
 esp_err_t oled_init(void);
 void oled_clear(void);
 void oled_show_string(int x, int y, const char *str);
