@@ -6,6 +6,7 @@
 #include "esp_log.h"
 #include "font8x8_basic.h"
 #include <string.h>
+#include <stdio.h>
 
 static const char *TAG = "oled";
 static esp_lcd_panel_handle_t panel_hdl = NULL;
@@ -448,39 +449,7 @@ void oled_draw_circle(int xc, int yc, int r, uint8_t color) {
     x++;
   }
 }
-/**
- * @brief 绘制一个图形进度条控件 (Progress Bar)
- * @param x 进度条左上角横坐标 (0 - 127)
- * @param y 进度条左上角纵坐标 (0 - 63)
- * @param width 进度条的总宽度（像素）
- * @param height 进度条的总高度（像素）
- * @param current 当前进度值
- * @param max 最大进度值
- */
-void oled_draw_progress_bar(int x, int y, int width, int height, int current,
-                            int max) {
-  if (max <= 0 || width <= 4 || height <= 4)
-    return;
-  if (current > max)
-    current = max;
-  if (current < 0)
-    current = 0;
 
-  // 1. 绘制进度条的外边框
-  oled_draw_rectangle(x, y, width, height);
-
-  // 2. 计算内部实心条的可用最大宽度和高度（留出 2 像素的内边距，保证美观）
-  int max_fill_width = width - 4;
-  int fill_height = height - 4;
-
-  // 3. 根据当前进度比例，计算出实心条应该点亮的实际像素宽度
-  int fill_width = (current * max_fill_width) / max;
-
-  // 4. 如果计算出的填充宽度大于 0，则在内部绘制实心填充条
-  if (fill_width > 0) {
-    oled_fill_rectangle(x + 2, y + 2, fill_width, fill_height);
-  }
-}
 /**
  * @brief 全屏反色闪烁转场特效 (Flash Screen Transition)
  * @param flash_count 闪烁的次数
@@ -611,4 +580,54 @@ void oled_show_string_16x16_bold(int start_x, int start_y, const char *str) {
     current_x += 16;
     str++;
   }
+}
+
+
+
+
+
+
+/**
+ * @brief 绘制一个带有内部实时百分比数字的图形进度条控件 (Progress Bar with Percentage)
+ * 升级版：将缓冲区扩大至 16 字节，完美解决 GCC 编译器的 format-truncation 警告错误
+ */
+void oled_draw_progress_bar(int x, int y, int width, int height, int current, int max) {
+  if (max <= 0 || width <= 4 || height <= 4) return;
+  if (current > max) current = max;
+  if (current < 0) current = 0;
+
+  // 1. 绘制进度条的外边框
+  oled_draw_rectangle(x, y, width, height);
+
+  // 2. 计算内部实心条的可用最大宽度和高度
+  int max_fill_width = width - 4;
+  int fill_height = height - 4;
+
+  // 3. 计算出当前应该填充的实际像素宽度
+  int fill_width = (current * max_fill_width) / max;
+
+  // 4. 在内部绘制实心填充条
+  if (fill_width > 0) {
+    oled_fill_rectangle(x + 2, y + 2, fill_width, fill_height);
+  }
+
+  // ==========================================================
+  // 核心升级：在进度条正中央动态注入百分比数字文本
+  // ==========================================================
+  int percentage = (current * 100) / max;
+
+  // 🌟 修正点：将大小从 8 改为 16，给编译器足够的安全感，彻底消除截断警告
+  char pct_str[16] = {0};
+  snprintf(pct_str, sizeof(pct_str), "%d%%", percentage);
+
+  // 计算 8x8 文本的居中 X 坐标：每个字符宽 8 像素
+  int str_len = strlen(pct_str);
+  int text_width = str_len * 8;
+  int text_x = x + (width - text_width) / 2;
+
+  // 计算文本的垂直居中 Y 坐标
+  int text_y = y + (height - 8) / 2;
+
+  // 将百分比字符串以反色（invert=1）的方式直接渲染在进度条中，实现黑白互补色彩对冲
+  oled_show_string_ex(text_x, text_y, pct_str, 1);
 }
