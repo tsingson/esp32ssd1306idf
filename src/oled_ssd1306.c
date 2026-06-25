@@ -457,10 +457,14 @@ void oled_draw_circle(int xc, int yc, int r, uint8_t color) {
  * @param current 当前进度值
  * @param max 最大进度值
  */
-void oled_draw_progress_bar(int x, int y, int width, int height, int current, int max) {
-  if (max <= 0 || width <= 4 || height <= 4) return;
-  if (current > max) current = max;
-  if (current < 0) current = 0;
+void oled_draw_progress_bar(int x, int y, int width, int height, int current,
+                            int max) {
+  if (max <= 0 || width <= 4 || height <= 4)
+    return;
+  if (current > max)
+    current = max;
+  if (current < 0)
+    current = 0;
 
   // 1. 绘制进度条的外边框
   oled_draw_rectangle(x, y, width, height);
@@ -500,15 +504,16 @@ void oled_flash_screen(int flash_count, int delay_ms) {
   }
 }
 
-
 /**
  * @brief 🌟 彻底修复后的硬件级屏幕震动仿生动态特效 (Screen Shake Effect)
- * 修正了 esp_lcd_panel_draw_bitmap 的坐标参数定义，100% 解决 start position 报错
+ * 修正了 esp_lcd_panel_draw_bitmap 的坐标参数定义，100% 解决 start position
+ * 报错
  * @param intensity 震动烈度（像素位移幅值，建议 2 - 6 像素）
  * @param duration_ms 总震动持续时间（毫秒）
  */
 void oled_shake_screen(int intensity, int duration_ms) {
-  if (!panel_hdl || intensity <= 0) return;
+  if (!panel_hdl || intensity <= 0)
+    return;
 
   int elapsed = 0;
   int step_delay = 15; // 每次抖动的间隔（毫秒）
@@ -523,10 +528,13 @@ void oled_shake_screen(int intensity, int duration_ms) {
       int target_page = (p + offset_y + 8) % 8;
 
       int y_start = target_page * 8;
-      int y_end = y_start + 8; // 🌟 核心修正：第四个参数必须是结束坐标 (y_start + 8)
+      int y_end =
+          y_start + 8; // 🌟 核心修正：第四个参数必须是结束坐标 (y_start + 8)
 
-      // 将 fb 缓冲区的原数据，安全地错位刷入屏幕相应区域，产生强烈的物理震动残影
-      esp_lcd_panel_draw_bitmap(panel_hdl, 0, y_start, OLED_WIDTH, y_end, &fb[p * OLED_WIDTH]);
+      // 将 fb
+      // 缓冲区的原数据，安全地错位刷入屏幕相应区域，产生强烈的物理震动残影
+      esp_lcd_panel_draw_bitmap(panel_hdl, 0, y_start, OLED_WIDTH, y_end,
+                                &fb[p * OLED_WIDTH]);
     }
 
     vTaskDelay(pdMS_TO_TICKS(step_delay));
@@ -537,70 +545,70 @@ void oled_shake_screen(int intensity, int duration_ms) {
   oled_refresh();
 }
 
-
-
-
-
-
-
 /**
- * @brief 通过实时算法将 8x8 字库双倍放大并加粗渲染为 16x16 粗体（带自动居中功能）
+ * @brief 通过实时算法将 8x8 字库双倍放大并加粗渲染为 16x16
+ * 粗体（带自动居中功能）
  * @param start_x 传入 -1 代表开启横向自动居中；传入 >=0 则作为固定起始横坐标
  * @param start_y 渲染起始纵坐标 (0 - 63)，建议为 24 左右以实现纵向居中
  * @param str 要显示的字符串内容
  */
 void oled_show_string_16x16_bold(int start_x, int start_y, const char *str) {
-    int current_x = start_x;
+  int current_x = start_x;
 
-    // 🌟 核心升级：如果传入 -1，自动计算 X 坐标使其在 128 宽的屏幕上完美居中
-    if (start_x == -1) {
-        int str_len = strlen(str);
-        int total_width = str_len * 16; // 每个 16x16 字符物理占用 16 像素宽
-        current_x = (OLED_WIDTH - total_width) / 2;
-        if (current_x < 0) current_x = 0; // 防止字符串超长导致坐标变负
-    }
+  // 🌟 核心升级：如果传入 -1，自动计算 X 坐标使其在 128 宽的屏幕上完美居中
+  if (start_x == -1) {
+    int str_len = strlen(str);
+    int total_width = str_len * 16; // 每个 16x16 字符物理占用 16 像素宽
+    current_x = (OLED_WIDTH - total_width) / 2;
+    if (current_x < 0)
+      current_x = 0; // 防止字符串超长导致坐标变负
+  }
 
-    while (*str) {
-        if (current_x + 16 > OLED_WIDTH) break;
+  while (*str) {
+    if (current_x + 16 > OLED_WIDTH)
+      break;
 
-        uint8_t c = (uint8_t)*str;
-        if (c > 127) c = ' ';
+    uint8_t c = (uint8_t)*str;
+    if (c > 127)
+      c = ' ';
 
-        int page_top = start_y / 8;
-        int page_bottom = page_top + 1;
+    int page_top = start_y / 8;
+    int page_bottom = page_top + 1;
 
-        for (int col = 0; col < 8; col++) {
-            uint8_t src_byte = font8x8_basic_tr[c][col];
+    for (int col = 0; col < 8; col++) {
+      uint8_t src_byte = font8x8_basic_tr[c][col];
 
-            // 纵向插值放大
-            uint16_t expanded_word = 0;
-            for (int bit = 0; bit < 8; bit++) {
-                if (src_byte & (1 << bit)) {
-                    expanded_word |= (3 << (bit * 2));
-                }
-            }
-
-            uint8_t top_byte = (uint8_t)(expanded_word & 0xFF);
-            uint8_t bottom_byte = (uint8_t)((expanded_word >> 8) & 0xFF);
-
-            // 横向倍增 2 次 ＋ 错位按位或实现边缘加粗 (Bold)
-            for (int repeat = 0; repeat < 2; repeat++) {
-                int out_x = current_x + (col * 2) + repeat;
-
-                if (out_x < OLED_WIDTH) {
-                    if (page_top >= 0 && page_top < 8) {
-                        fb[page_top * OLED_WIDTH + out_x] |= top_byte;
-                        if (out_x + 1 < OLED_WIDTH) fb[page_top * OLED_WIDTH + (out_x + 1)] |= top_byte;
-                    }
-                    if (page_bottom >= 0 && page_bottom < 8) {
-                        fb[page_bottom * OLED_WIDTH + out_x] |= bottom_byte;
-                        if (out_x + 1 < OLED_WIDTH) fb[page_bottom * OLED_WIDTH + (out_x + 1)] |= bottom_byte;
-                    }
-                }
-            }
+      // 纵向插值放大
+      uint16_t expanded_word = 0;
+      for (int bit = 0; bit < 8; bit++) {
+        if (src_byte & (1 << bit)) {
+          expanded_word |= (3 << (bit * 2));
         }
+      }
 
-        current_x += 16;
-        str++;
+      uint8_t top_byte = (uint8_t)(expanded_word & 0xFF);
+      uint8_t bottom_byte = (uint8_t)((expanded_word >> 8) & 0xFF);
+
+      // 横向倍增 2 次 ＋ 错位按位或实现边缘加粗 (Bold)
+      for (int repeat = 0; repeat < 2; repeat++) {
+        int out_x = current_x + (col * 2) + repeat;
+
+        if (out_x < OLED_WIDTH) {
+          if (page_top >= 0 && page_top < 8) {
+            fb[page_top * OLED_WIDTH + out_x] |= top_byte;
+            if (out_x + 1 < OLED_WIDTH)
+              fb[page_top * OLED_WIDTH + (out_x + 1)] |= top_byte;
+          }
+          if (page_bottom >= 0 && page_bottom < 8) {
+            fb[page_bottom * OLED_WIDTH + out_x] |= bottom_byte;
+            if (out_x + 1 < OLED_WIDTH)
+              fb[page_bottom * OLED_WIDTH + (out_x + 1)] |= bottom_byte;
+          }
+        }
+      }
     }
+
+    current_x += 16;
+    str++;
+  }
 }
