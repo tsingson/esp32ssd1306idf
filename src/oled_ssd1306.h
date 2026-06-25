@@ -3,8 +3,8 @@
 
 #include "esp_err.h"
 
-#define OLED_SDA_PIN      21
-#define OLED_SCL_PIN      22
+#define OLED_SDA_PIN      33
+#define OLED_SCL_PIN      32
 #define OLED_I2C_ADDR     0x3C
 #define OLED_WIDTH        128
 #define OLED_HEIGHT       64
