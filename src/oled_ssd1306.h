@@ -30,6 +30,8 @@ void oled_fill_rectangle(int x, int y, int width, int height);
 
 // 升级后的字符串显示接口声明，带反色控制
 void oled_show_string_ex(int start_x, int start_y, const char *str, uint8_t invert);
+// 追加斜线绘制接口声明
+void oled_draw_line(int x1, int y1, int x2, int y2, uint8_t color);
 
 
 #endif

@@ -362,3 +362,51 @@ void oled_show_string_ex(int start_x, int start_y, const char *str, uint8_t inve
     str++;
   }
 }
+#include <stdlib.h> // 引入 abs() 函数计算绝对值
+
+/**
+ * @brief 基于布雷森汉姆（Bresenham）算法绘制任意斜线 (Draw Line)
+ * @param x1 起点横坐标 (0 - 127)
+ * @param y1 起点纵坐标 (0 - 63)
+ * @param x2 终点横坐标 (0 - 127)
+ * @param y2 终点纵坐标 (0 - 63)
+ * @param color 1 代表点亮线段像素，0 代表擦除线段
+ */
+void oled_draw_line(int x1, int y1, int x2, int y2, uint8_t color) {
+  // 计算两点在 X 和 Y 轴上的绝对距离
+  int dx = abs(x2 - x1);
+  int dy = abs(y2 - y1);
+
+  // 确定步进方向（向左/向右，向上/向下）
+  int sx = (x1 < x2) ? 1 : -1;
+  int sy = (y1 < y2) ? 1 : -1;
+
+  // 初始化决策误差项值
+  int err = dx - dy;
+  int e2;
+
+  while (1) {
+    // 🌟 复用之前已经经过边界保护的物理画点函数，确保安全写入
+    oled_draw_pixel(x1, y1, color);
+
+    // 如果起点和终点重合，说明线段绘制完毕，安全退出
+    if (x1 == x2 && y1 == y2) {
+      break;
+    }
+
+    // 核心步进决策
+    e2 = 2 * err;
+
+    // 决定是否在 X 方向上步进像素
+    if (e2 > -dy) {
+      err -= dy;
+      x1 += sx;
+    }
+
+    // 决定是否在 Y 方向上步进像素
+    if (e2 < dx) {
+      err += dx;
+      y1 += sy;
+    }
+  }
+}
