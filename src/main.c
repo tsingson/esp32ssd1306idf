@@ -13,7 +13,7 @@
 static const char *TAG = "main";
 
 // 硬件唤醒按键管脚定义（推荐使用 GPIO 4，外接一个按键到地 GND）
-#define WAKEUP_BUTTON_GPIO    4
+#define WAKEUP_BUTTON_GPIO    0
 
 // FreeRTOS 句柄
 static QueueHandle_t data_queue = NULL;
