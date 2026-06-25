@@ -3,8 +3,11 @@
 #include "freertos/task.h"
 #include "freertos/queue.h"
 #include "freertos/semphr.h"
+#include "esp_sleep.h"      // 🌟 Crucial: Added for ESP32 SoC low-power sleep registers
 #include "esp_log.h"
 #include "oled_ssd1306.h"
+#include "driver/uart.h" // 🌟 显式引入 UART 驱动头文件
+
 
 static const char *TAG = "main";
 
@@ -23,51 +26,44 @@ void ssd_task(void *pvParameters) {
     while (1) {
         // Step 1: Wait and pull exactly 10 sequential elements out of the queue
         for (int i = 0; i < 10; i++) {
-            // Block indefinitely until an item arrives from the queue
             if (xQueueReceive(data_queue, &received_val, portMAX_DELAY) == pdTRUE) {
                 ESP_LOGI(TAG, "SSD Task processed value: %d", received_val);
 
-                // Format string output line matching the requirements
                 snprintf(display_str, sizeof(display_str), "queue rcv: %d", received_val);
 
-                // Render cleanly onto the canvas using our robust 8x8 font engine
                 oled_clear();
-                oled_show_string_ex(0, 0, "=== SYSTEM ===", 1); // Fixed header
-                oled_show_string_ex(0, 24, display_str, 0);       // Changing dynamic data row
+                oled_show_string_ex(0, 0, "=== SYSTEM ===", 1);
+                oled_show_string_ex(0, 24, display_str, 0);
                 oled_refresh();
 
-                // Small human-readable delay between data print frames
                 vTaskDelay(pdMS_TO_TICKS(400));
             }
         }
 
-        // Step 2: Completed processing 10 values. Enforce required 2-second hold delay
+        // Step 2: Completed processing 10 values. Enforce 2-second hold delay
         ESP_LOGI(TAG, "SSD Task finished 10 items. Holding view for 2s...");
         vTaskDelay(pdMS_TO_TICKS(2000));
 
-        // Step 3: Flash a message stating rendering loop complete
         oled_clear();
         oled_show_string_ex(0, 0, "=== SYSTEM ===", 1);
         oled_show_string_ex(0, 24, "Batch Complete!", 0);
         oled_refresh();
 
-        // Step 4: Fire signaling semaphore upstream to indicate task batch wrap up
+        // Step 3: Fire signaling semaphore upstream to indicate task batch wrap up
         xSemaphoreGive(display_done_sem);
 
-        // Step 5: Force task into suspension loop awaiting explicit external wakeup call
+        // Step 4: Force task into suspension loop awaiting explicit external wakeup call
         ESP_LOGI(TAG, "SSD Task suspending self to wait for main thread...");
         vTaskSuspend(NULL);
     }
 }
 
 void app_main(void) {
-    // Initialize our zero-RAM-pollution driver
     if (oled_init() != ESP_OK) {
         ESP_LOGE(TAG, "OLED Core Engine Init Failed!");
         return;
     }
 
-    // Allocate FreeRTOS primitives
     data_queue = xQueueCreate(10, sizeof(int));
     display_done_sem = xSemaphoreCreateBinary();
 
@@ -76,7 +72,6 @@ void app_main(void) {
         return;
     }
 
-    // Spawn the background consumer processing task loop
     xTaskCreate(ssd_task, "ssd_task", 3072, NULL, 5, &ssd_task_handle);
 
     while (1) {
@@ -84,29 +79,41 @@ void app_main(void) {
         ESP_LOGI(TAG, "Starting new processing cycle...");
         ESP_LOGI(TAG, "===============================");
 
-        // Step 1: Consecutively write integer data 1 through 10 downstream into the queue pipeline
+        // Step 1: Consecutively write integer data 1 through 10 downstream into the queue
         for (int val = 1; val <= 10; val++) {
-            ESP_LOGI(TAG, "Main writing to queue: %d", val);
             xQueueSend(data_queue, &val, portMAX_DELAY);
         }
 
-        // Step 2: Block main thread execution context until SSD worker fires done semaphore
-        ESP_LOGI(TAG, "Main thread waiting for display batch completion signal...");
+        // Step 2: Block main thread until SSD worker fires done semaphore
         xSemaphoreTake(display_done_sem, portMAX_DELAY);
 
-        // Step 3: Synchronously invoke low-power peripheral sleep profiles
-        ESP_LOGI(TAG, "Signal received. Putting peripheral to hardware sleep mode...");
-        oled_sleep_enter(); // Shuts down SSD1306 charge pump -> Microamps drop
+        // Step 3: Put the peripheral display into physical sleep mode (turns off charge pump)
+        ESP_LOGI(TAG, "Signal received. Putting OLED to hardware sleep mode...");
+        oled_sleep_enter();
 
-        // Step 4: Keep main sleeping for exactly 30 seconds as explicitly requested
-        ESP_LOGI(TAG, "Main entering a 30-second low-power sleep phase...");
-        vTaskDelay(pdMS_TO_TICKS(30000));
+        // Step 4: Configure the ESP32 SoC RTC Timer to wake up after 30 seconds
+        // 30 seconds = 30,000,000 microseconds
+        uint64_t sleep_time_us = 30ULL * 1000ULL * 1000ULL;
+        ESP_ERROR_CHECK(esp_sleep_enable_timer_wakeup(sleep_time_us));
 
-        // Step 5: 30 seconds elapsed. Perform coordinated hardware wake sequences
-        ESP_LOGI(TAG, "30-second timer elapsed! Re-awakening hardware components...");
-        oled_sleep_exit();  // Recalibrates SSD1306 VCC charge pumps and updates active frame buffer
+        // Step 5: Enforce SoC Light Sleep
+        ESP_LOGI(TAG, "ESP32 Entering SoC Light Sleep Now (RAM preserved)...");
+        // 🌟 完美适配 ESP-IDF 5.x 的新版串口冲刷等待函数
+        //  正确单参数写法，完美适配你的 ESP-IDF 5.3.1 串口驱动
+        uart_wait_tx_idle_polling(CONFIG_ESP_CONSOLE_UART_NUM);
 
-        // Step 6: Wake the consumer task from its suspended state to handle next iteration
+
+
+        // 🌟 Execution FREEZES here. CPU clocks stop, RTC timer ticks down 30s in the background.
+        esp_light_sleep_start();
+
+        // Step 6: 30 seconds elapsed! The SoC hardware automatic wake-up sequence resumes here seamlessly.
+        ESP_LOGI(TAG, "ESP32 SoC woke up from Light Sleep!");
+
+        // Step 7: Wake up the OLED display peripheral (Re-ignites I2C and VCC charge pump)
+        oled_sleep_exit();
+
+        // Step 8: Resume the suspended background consumer processing task loop
         ESP_LOGI(TAG, "Resuming SSD Task context loop...");
         vTaskResume(ssd_task_handle);
     }
