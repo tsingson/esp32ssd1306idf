@@ -448,3 +448,32 @@ void oled_draw_circle(int xc, int yc, int r, uint8_t color) {
     x++;
   }
 }
+/**
+ * @brief 绘制一个图形进度条控件 (Progress Bar)
+ * @param x 进度条左上角横坐标 (0 - 127)
+ * @param y 进度条左上角纵坐标 (0 - 63)
+ * @param width 进度条的总宽度（像素）
+ * @param height 进度条的总高度（像素）
+ * @param current 当前进度值
+ * @param max 最大进度值
+ */
+void oled_draw_progress_bar(int x, int y, int width, int height, int current, int max) {
+  if (max <= 0 || width <= 4 || height <= 4) return;
+  if (current > max) current = max;
+  if (current < 0) current = 0;
+
+  // 1. 绘制进度条的外边框
+  oled_draw_rectangle(x, y, width, height);
+
+  // 2. 计算内部实心条的可用最大宽度和高度（留出 2 像素的内边距，保证美观）
+  int max_fill_width = width - 4;
+  int fill_height = height - 4;
+
+  // 3. 根据当前进度比例，计算出实心条应该点亮的实际像素宽度
+  int fill_width = (current * max_fill_width) / max;
+
+  // 4. 如果计算出的填充宽度大于 0，则在内部绘制实心填充条
+  if (fill_width > 0) {
+    oled_fill_rectangle(x + 2, y + 2, fill_width, fill_height);
+  }
+}

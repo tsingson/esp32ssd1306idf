@@ -32,5 +32,7 @@ void oled_show_string_ex(int start_x, int start_y, const char *str,
 void oled_draw_line(int x1, int y1, int x2, int y2, uint8_t color);
 // 追加圆形绘制接口声明
 void oled_draw_circle(int xc, int yc, int r, uint8_t color);
+// 追加进度条接口声明
+void oled_draw_progress_bar(int x, int y, int width, int height, int current, int max);
 
 #endif
