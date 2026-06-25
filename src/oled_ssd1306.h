@@ -15,9 +15,11 @@ void oled_show_string(int x, int y, const char *str);
 void oled_refresh(void);
 void oled_sleep_enter(void);
 void oled_sleep_exit(void);
- 
 
 // 🌟 追加这一行高级换行接口声明
 void oled_show_string_wrap(int start_x, int start_y, const char *str);
+// 追加图形接口声明
+void oled_draw_pixel(int x, int y, uint8_t color);
+void oled_draw_rectangle(int x, int y, int width, int height);
 
 #endif

@@ -182,10 +182,11 @@ void oled_show_string_wrap(int start_x, int start_y, const char *str) {
     // 3. 核心换行逻辑（Text Wrap）：如果当前字符写入位置会超出屏幕右侧边缘
     if (current_x + 8 > OLED_WIDTH) {
       current_x = start_x; // 强制将 X 坐标归位到起始位置
-      current_y += 8;     // 纵向下移一行（8像素）
+      current_y += 8;      // 纵向下移一行（8像素）
     }
 
-    // 4. 纵向边界保护：如果文本行数过多，超出了屏幕最底部边缘 (64像素)，自动停止渲染防止显存踩踏
+    // 4. 纵向边界保护：如果文本行数过多，超出了屏幕最底部边缘
+    // (64像素)，自动停止渲染防止显存踩踏
     if (current_y + 8 > OLED_HEIGHT) {
       break;
     }
@@ -207,5 +208,59 @@ void oled_show_string_wrap(int start_x, int start_y, const char *str) {
 
     current_x += 8; // 8x8 字符横向固定向前步进 8 像素
     str++;          // 扫描下一个字符
+  }
+}
+/**
+ * @brief 在全屏缓冲区中绘制一个最基础的物理像素点 (Draw Pixel)
+ * @param x 像素横坐标 (0 - 127)
+ * @param y 像素纵坐标 (0 - 63)
+ * @param color 1 代表点亮像素，0 代表熄灭像素
+ */
+void oled_draw_pixel(int x, int y, uint8_t color) {
+  // 边界保护：超出屏幕物理尺寸的点直接忽略，防止内存越界踩踏
+  if (x < 0 || x >= OLED_WIDTH || y < 0 || y >= OLED_HEIGHT) {
+    return;
+  }
+
+  // 计算该像素位于 8 个 Page 页中的哪一页 (0 - 7)
+  int page = y / 8;
+  // 计算该像素在当前字节中的第几位 (0 - 7)
+  int bit = y % 8;
+
+  // 写入显存缓冲区
+  if (color) {
+    fb[page * OLED_WIDTH + x] |= (1 << bit); // 点亮该位
+  } else {
+    fb[page * OLED_WIDTH + x] &= ~(1 << bit); // 熄灭该位
+  }
+}
+
+/**
+ * @brief 在指定坐标绘制任意大小的空心矩形框 (Draw Rectangle)
+ * @param x 矩形左上角横坐标 (0 - 127)
+ * @param y 矩形左上角纵坐标 (0 - 63)
+ * @param width 矩形的宽度（像素）
+ * @param height 矩形的高度（像素）
+ */
+void oled_draw_rectangle(int x, int y, int width, int height) {
+  // 如果宽度或高度非法，直接退出
+  if (width <= 0 || height <= 0) {
+    return;
+  }
+
+  // 计算右下角边界
+  int x_end = x + width - 1;
+  int y_end = y + height - 1;
+
+  // 1. 绘制水平的顶部边线和底部边线
+  for (int i = x; i <= x_end; i++) {
+    oled_draw_pixel(i, y, 1);     // 顶边
+    oled_draw_pixel(i, y_end, 1); // 底边
+  }
+
+  // 2. 绘制垂直的左侧边线和右侧边线
+  for (int j = y; j <= y_end; j++) {
+    oled_draw_pixel(x, j, 1);     // 左边
+    oled_draw_pixel(x_end, j, 1); // 右边
   }
 }
