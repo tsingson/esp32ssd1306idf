@@ -5,8 +5,8 @@
 #include "esp_lcd_panel_vendor.h"
 #include "esp_log.h"
 #include "font8x8_basic.h"
-#include <string.h>
 #include <stdio.h>
+#include <string.h>
 
 static const char *TAG = "oled";
 static esp_lcd_panel_handle_t panel_hdl = NULL;

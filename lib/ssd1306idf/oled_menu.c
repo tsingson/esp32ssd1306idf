@@ -1,9 +1,9 @@
 #include "oled_menu.h"
-#include "oled_ssd1306.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-#include <stdio.h>
+#include "oled_ssd1306.h"
 #include <math.h>
+#include <stdio.h>
 
 static const menu_list_t *current_menu = NULL;
 static uint8_t selected_index = 0;

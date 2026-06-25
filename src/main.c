@@ -1,3 +1,4 @@
+#include "oled_ssd1306.h"
 #include "driver/gpio.h"
 #include "driver/uart.h"
 #include "esp_log.h"
@@ -6,7 +7,6 @@
 #include "freertos/queue.h"
 #include "freertos/semphr.h"
 #include "freertos/task.h"
-#include "oled_ssd1306.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -157,7 +157,7 @@ void app_main(void) {
 
     ESP_LOGI(
         TAG,
-        "ESP32 Entering Light Sleep. Wait 30s OR press Button on GPIO 4...");
+        "ESP32 Entering Light Sleep. Wait 30s OR press Button on GPIO 0 (boot button)...");
 
     // 完美兼容你环境中的单参数 5.3.1 串口物理冲刷标准
     uart_wait_tx_idle_polling(CONFIG_ESP_CONSOLE_UART_NUM);
