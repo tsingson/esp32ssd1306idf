@@ -8,9 +8,13 @@
 
 static const char *TAG = "oled";
 static esp_lcd_panel_handle_t panel_hdl = NULL;
+
+// 🌟 核心修正：将 I2C 总线句柄提升为全局静态变量，防止函数退出后生命周期结束导致底层通信失败
+static i2c_master_bus_handle_t bus_hdl = NULL;
+
 static uint8_t fb[OLED_WIDTH * OLED_HEIGHT / 8] = {0};
 
-// 经过修正且安全对齐的二维数组字库 (32-127 完整版，每个字符占用独立 8 字节空间)
+// 标准可打印 ASCII 8x8 字库 (32-126)
 static const uint8_t ascii_8x8[95][8] = {
     {0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00}, {0x00,0x00,0x5F,0x00,0x00,0x00,0x00,0x00}, //  , !
     {0x00,0x07,0x00,0x07,0x00,0x00,0x00,0x00}, {0x14,0x7F,0x14,0x7F,0x14,0x00,0x00,0x00}, // ", #
@@ -50,7 +54,7 @@ static const uint8_t ascii_8x8[95][8] = {
     {0x08,0x7E,0x09,0x01,0x02,0x00,0x00,0x00}, {0x08,0x14,0x54,0x54,0x3C,0x00,0x00,0x00}, // f, g
     {0x7F,0x08,0x04,0x04,0x78,0x00,0x00,0x00}, {0x00,0x44,0x7D,0x40,0x00,0x00,0x00,0x00}, // h, i
     {0x20,0x40,0x44,0x3D,0x00,0x00,0x00,0x00}, {0x00,0x7F,0x10,0x28,0x44,0x00,0x00,0x00}, // j, k
-    {0x00,0x41,0x7F,0x40,0x00,0x00,0x00,0x00}, {0x7C,0x04,0x18,0x04,0x78,0x00,0x00,0x00}, // l, m
+    {0x00,0x7F,0x10,0x28,0x44,0x00,0x00,0x00}, {0x7C,0x04,0x18,0x04,0x78,0x00,0x00,0x00}, // l, m
     {0x7C,0x08,0x04,0x04,0x78,0x00,0x00,0x00}, {0x38,0x44,0x44,0x44,0x38,0x00,0x00,0x00}, // n, o
     {0x7C,0x14,0x14,0x14,0x08,0x00,0x00,0x00}, {0x08,0x14,0x14,0x18,0x7C,0x00,0x00,0x00}, // p, q
     {0x7C,0x08,0x04,0x04,0x08,0x00,0x00,0x00}, {0x48,0x54,0x54,0x54,0x20,0x00,0x00,0x00}, // r, s
@@ -63,7 +67,6 @@ static const uint8_t ascii_8x8[95][8] = {
 };
 
 esp_err_t oled_init(void) {
-    i2c_master_bus_handle_t bus_hdl = NULL;
     i2c_master_bus_config_t bus_cfg = {
         .clk_source = I2C_CLK_SRC_DEFAULT,
         .i2c_port = -1,
@@ -72,7 +75,7 @@ esp_err_t oled_init(void) {
         .glitch_ignore_cnt = 7,
         .flags.enable_internal_pullup = true,
     };
-    // 1. 初始化 I2C 主线总线
+    // 1. 初始化分配并驻留在全局静态内存中
     if (i2c_new_master_bus(&bus_cfg, &bus_hdl) != ESP_OK) return ESP_FAIL;
 
     esp_lcd_panel_io_handle_t io_hdl = NULL;
@@ -84,14 +87,11 @@ esp_err_t oled_init(void) {
         .lcd_cmd_bits = 8,
         .lcd_param_bits = 8,
     };
-    // 2. 注入总线句柄参数，派生底层面板传输 IO
     if (esp_lcd_new_panel_io_i2c(bus_hdl, &io_cfg, &io_hdl) != ESP_OK) return ESP_FAIL;
 
     esp_lcd_panel_dev_config_t dev_cfg = { .bits_per_pixel = 1, .reset_gpio_num = -1 };
-    // 3. 构建 SSD1306 控制面板
     if (esp_lcd_new_panel_ssd1306(io_hdl, &dev_cfg, &panel_hdl) != ESP_OK) return ESP_FAIL;
 
-    // 4. 执行屏幕硬件级启动序列
     esp_lcd_panel_reset(panel_hdl);
     esp_lcd_panel_init(panel_hdl);
     esp_lcd_panel_disp_on_off(panel_hdl, true);
@@ -106,14 +106,12 @@ void oled_show_string(int x, int y, const char *str) {
     while (*str) {
         if (x + 8 > OLED_WIDTH) break;
         uint8_t c = (uint8_t)*str;
-
         if (c < 32 || c > 126) c = 32;
         uint8_t idx = c - 32;
 
         int page = y / 8;
         if (page < 8) {
             for (int col = 0; col < 8; col++) {
-                // 确保数据写入精确对应到一维数组显存中
                 fb[page * OLED_WIDTH + (x + col)] |= ascii_8x8[idx][col];
             }
         }
@@ -130,15 +128,15 @@ void oled_refresh(void) {
 
 void oled_sleep_enter(void) {
     if (panel_hdl) {
-        esp_lcd_panel_disp_on_off(panel_hdl, false); // 发送命令关闭 SSD1306 内部电荷泵
-        ESP_LOGI(TAG, "SSD1306 Charge Pump OFF, Powered Down.");
+        esp_lcd_panel_disp_on_off(panel_hdl, false);
+        ESP_LOGI(TAG, "OLED Power Down Sleep Mode.");
     }
 }
 
 void oled_sleep_exit(void) {
     if (panel_hdl) {
-        esp_lcd_panel_disp_on_off(panel_hdl, true);  // 重新激活电荷泵驱动
-        oled_refresh();                              // 刷新同步恢复显存
-        ESP_LOGI(TAG, "SSD1306 Awakened.");
+        esp_lcd_panel_disp_on_off(panel_hdl, true);
+        oled_refresh();
+        ESP_LOGI(TAG, "OLED Awakened Successfully.");
     }
 }
