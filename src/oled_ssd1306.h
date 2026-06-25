@@ -3,7 +3,7 @@
 
 #include "esp_err.h"
 
-// 硬件核心配置
+// 核心硬件物理配置
 #define OLED_SDA_PIN      21
 #define OLED_SCL_PIN      22
 #define OLED_I2C_ADDR     0x3C
