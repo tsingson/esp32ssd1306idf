@@ -78,7 +78,7 @@ void ssd_task(void *pvParameters) {
         // ==========================================================
         for (int j = 0; j < 10; j++) {
             // 此时 display_str 作为合法指针传入，格式化与打印绝对安全
-            snprintf(display_str, sizeof(display_str), "RCV: %d", data_buffer[j]);
+            snprintf(display_str, sizeof(display_str), "RCV:%d", data_buffer[j]);
             ESP_LOGI(TAG, "OLED Print Center Bold: %s", display_str);
 
             oled_clear();
