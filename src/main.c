@@ -206,79 +206,51 @@ static const char *TAG = "app_power";
 
 
 
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "oled_ssd1306.h"
+#include "oled_menu.h"
 
-
-// Forward declare nested menu lists to connect parent-child relationships
-extern const menu_list_t main_root_menu;
-extern const menu_list_t settings_submenu;
-extern const menu_list_t info_submenu;
-
-// Define specific standalone processing actions
-void cb_action_wifi(void)  { ESP_LOGI(TAG, "WiFi scan executing..."); }
-void cb_action_bt(void)    { ESP_LOGI(TAG, "Bluetooth pairing triggered..."); }
-void cb_action_sleep(void) { ESP_LOGI(TAG, "Entering sleep calibration..."); }
-
-// --- Level 2 Submenus ---
-const menu_item_t settings_items[] = {
-    { "1. Wi-Fi Config",  cb_action_wifi,  NULL },
-    { "2. Bluetooth",     cb_action_bt,    NULL },
-    { "3. System Sleep",  cb_action_sleep, NULL }
-};
-const menu_list_t settings_submenu = {
-    .title = "[ SETTINGS ]",
-    .items = settings_items,
-    .item_count = 3,
-    .parent_menu = &main_root_menu // Links backward safely
+// Setup a massive sample list to trigger layout wrap bounds scrolling
+const menu_item_t long_items[] = {
+  { "Item Alpha",    NULL, NULL },
+  { "Item Beta",     NULL, NULL },
+  { "Item Gamma",    NULL, NULL },
+  { "Item Delta",    NULL, NULL },
+  { "Item Epsilon",  NULL, NULL },
+  { "Item Zeta",     NULL, NULL },
+  { "Item Eta",      NULL, NULL },
+  { "Item Theta",    NULL, NULL },
+  { "Item Iota",     NULL, NULL },
+  { "Item Kappa",    NULL, NULL }
 };
 
-const menu_item_t info_items[] = {
-    { "Model: ESP32-D0WD", NULL, NULL },
-    { "IDF Ver: v5.3.1",   NULL, NULL },
-    { "Driver: esp_lcd",   NULL, NULL }
-};
-const menu_list_t info_submenu = {
-    .title = "[ SYS INFO ]",
-    .items = info_items,
-    .item_count = 3,
-    .parent_menu = &main_root_menu
-};
-
-// --- Level 1 Root Tree Node ---
-const menu_item_t root_items[] = {
-    { "-> Device Config", NULL, &settings_submenu }, // Leads downstream to submenu
-    { "-> System Info",   NULL, &info_submenu     }, // Leads downstream to submenu
-    { "-> Global Reset",  NULL, NULL             }
-};
-const menu_list_t main_root_menu = {
-    .title = "--- ROOT MENU ---",
-    .items = root_items,
-    .item_count = 3,
-    .parent_menu = NULL // Boundary root baseline limit
+const menu_list_t long_scrolling_menu = {
+  .title = "--- SCROLL DEMO ---",
+  .items = long_items,
+  .item_count = 10,
+  .parent_menu = NULL
 };
 
 void app_main(void) {
-    if (oled_init() != ESP_OK) return;
+  if (oled_init() != ESP_OK) return;
 
-    // Load initial context pointer references
-    menu_init(&main_root_menu);
-    menu_render();
+  menu_init(&long_scrolling_menu);
+  menu_render_smooth();
 
-    // 💡 Simulated navigation demo routine
-    while (1) {
-        vTaskDelay(pdMS_TO_TICKS(2000));
-        menu_next(); // Move to row 1
-        menu_render();
-
-        vTaskDelay(pdMS_TO_TICKS(2000));
-        menu_select(); // Enter System Info Submenu
-        menu_render();
-
-        vTaskDelay(pdMS_TO_TICKS(2000));
-        menu_next(); // Scroll down in submenu
-        menu_render();
-
-        vTaskDelay(pdMS_TO_TICKS(2000));
-        menu_back(); // Retreat safely to baseline root node
-        menu_render();
+  while (1) {
+    // Simulating incremental down keypress actions every 1.5 seconds
+    for (int i = 0; i < 9; i++) {
+      vTaskDelay(pdMS_TO_TICKS(1500));
+      menu_next();
+      menu_render_smooth(); // Sliding animation triggers here dynamically
     }
+
+    // Simulating incremental up keypress actions every 1.5 seconds
+    for (int i = 0; i < 9; i++) {
+      vTaskDelay(pdMS_TO_TICKS(1500));
+      menu_prev();
+      menu_render_smooth(); // Slides smoothly back to origin baseline
+    }
+  }
 }

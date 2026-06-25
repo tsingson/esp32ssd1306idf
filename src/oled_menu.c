@@ -1,14 +1,25 @@
 #include "oled_menu.h"
 #include "oled_ssd1306.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 #include <stdio.h>
+#include <math.h>
 
-// Static tracking states
 static const menu_list_t *current_menu = NULL;
 static uint8_t selected_index = 0;
+
+// 🌟 Smooth Viewport Animation Control Parameters
+static float current_camera_y = 0.0f;  // Actual smooth animated scrolling position
+static float target_camera_y = 0.0f;   // Calculated destination scroll target
+#define ROW_HEIGHT       10             // Row vertical spacing (8px char + 2px padding gap)
+#define VIEWPORT_HEIGHT  48             // Height allocated for list contents (64 total - 16 title/footer padding)
+#define ANIMS_SPEED      0.25f          // LERP Step weight (0.1 = slow, 0.4 = snapping fast)
 
 void menu_init(const menu_list_t *root) {
     current_menu = root;
     selected_index = 0;
+    current_camera_y = 0.0f;
+    target_camera_y = 0.0f;
 }
 
 void menu_next(void) {
@@ -25,55 +36,85 @@ void menu_prev(void) {
 
 void menu_select(void) {
     if (!current_menu) return;
-
     const menu_item_t *active_item = &current_menu->items[selected_index];
-
-    // Branch A: Navigate down standard structural link
     if (active_item->child_menu) {
         current_menu = active_item->child_menu;
-        selected_index = 0; // Reset index to row 0 in the newly opened view
-    }
-    // Branch B: Trigger the discrete functional user action terminal callback
-    else if (active_item->action_cb) {
+        selected_index = 0;
+        current_camera_y = 0.0f;
+        target_camera_y = 0.0f;
+    } else if (active_item->action_cb) {
         active_item->action_cb();
     }
 }
 
 void menu_back(void) {
-    // Pop safely backwards into retrospective scope history
     if (current_menu && current_menu->parent_menu) {
         current_menu = current_menu->parent_menu;
         selected_index = 0;
+        current_camera_y = 0.0f;
+        target_camera_y = 0.0f;
     }
 }
 
-void menu_render(void) {
+// 🌟 Viewport calculation engine with built-in LERP loop
+void menu_render_smooth(void) {
     if (!current_menu) return;
 
-    oled_clear();
+    // A. Dynamic Window Management: Calculate upper/lower physical viewport boundaries
+    int selected_row_top = selected_index * ROW_HEIGHT;
+    int selected_row_bottom = selected_row_top + ROW_HEIGHT;
 
-    // 1. Render permanent fixed top layout banner containing view context title
-    oled_fill_rectangle(0, 0, 128, 8);
-    oled_show_string_ex(2, 0, current_menu->title, 1); // Inverse white background text
-
-    // 2. Iterate list limits dynamically based on tracking index bounds (Safe maximum rows)
-    for (uint8_t i = 0; i < current_menu->item_count; i++) {
-        // Enforce physical page overflow boundary (Max 6 rows under 8px offset constraints)
-        int y_pos = 16 + (i * 8);
-        if (y_pos + 8 > OLED_HEIGHT) break;
-
-        if (i == selected_index) {
-            // Highlighting cursor: Layer background bar under current row
-            oled_fill_rectangle(0, y_pos, 128, 8);
-            oled_show_string_ex(8, y_pos, current_menu->items[i].text, 1); // Inverted black text
-
-            // Append explicit functional glyph selector indicator
-            oled_show_string_ex(0, y_pos, ">", 1);
-        } else {
-            // Standard passive background view state representation
-            oled_show_string_ex(8, y_pos, current_menu->items[i].text, 0); // Normal white text
-        }
+    // Check if the current item is moving out of the bottom window view threshold
+    if (selected_row_bottom - target_camera_y > VIEWPORT_HEIGHT) {
+        target_camera_y = selected_row_bottom - VIEWPORT_HEIGHT;
+    }
+    // Check if the current item is moving past the top window view threshold
+    if (selected_row_top < target_camera_y) {
+        target_camera_y = selected_row_top;
     }
 
-    oled_refresh();
+    // B. Main Animation Frame Update Loop
+    // Continues calculating intermediate positions until current_camera close enough to target
+    while (fabs(target_camera_y - current_camera_y) > 0.1f) {
+        // Linear Interpolation: current = current + (target - current) * factor
+        current_camera_y += (target_camera_y - current_camera_y) * ANIMS_SPEED;
+
+        oled_clear();
+
+        // 1. Draw static floating Title Window Banner (Header)
+        oled_fill_rectangle(0, 0, 128, 10);
+        oled_show_string_ex(2, 1, current_menu->title, 1); // Reverse background title
+
+        // 2. Render scrolling list items relative to the animated camera frame
+        for (uint8_t i = 0; i < current_menu->item_count; i++) {
+            // Compute current absolute dynamic rendering offset on screen canvas
+            int virtual_y_pos = 14 + (i * ROW_HEIGHT) - (int)current_camera_y;
+
+            // Viewport clipping bounds checks: Skip calculation if text falls completely outside visible frame
+            if (virtual_y_pos < 12 || virtual_y_pos > 56) {
+                continue;
+            }
+
+            if (i == selected_index) {
+                // Render cursor active row selection background blocks
+                oled_fill_rectangle(0, virtual_y_pos - 1, 128, ROW_HEIGHT);
+                oled_show_string_ex(8, virtual_y_pos, current_menu->items[i].text, 1); // Inverse dark font
+                oled_show_string_ex(1, virtual_y_pos, ">", 1);
+            } else {
+                // Render standard unselected row text stream blocks
+                oled_show_string_ex(8, virtual_y_pos, current_menu->items[i].text, 0); // Passive font
+            }
+        }
+
+        // 3. Optional: Subtle visual element scrollbar on the right screen border edge
+        if (current_menu->item_count > 5) {
+            int total_content_h = current_menu->item_count * ROW_HEIGHT;
+            int bar_h = (VIEWPORT_HEIGHT * VIEWPORT_HEIGHT) / total_content_h;
+            int bar_y = 14 + ((int)current_camera_y * (VIEWPORT_HEIGHT - bar_h)) / (total_content_h - VIEWPORT_HEIGHT);
+            oled_fill_rectangle(126, bar_y, 2, bar_h);
+        }
+
+        oled_refresh();
+        vTaskDelay(pdMS_TO_TICKS(30)); // Lock frame update rate cycle to ~33 FPS
+    }
 }
