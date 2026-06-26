@@ -1,4 +1,9 @@
-#include "oled_ssd1306.h"
+
+
+// Example 1: Using your new macro values
+#define MY_SSD1306_SCL_PIN 32
+#define MY_SSD1306_SDA_PIN 33
+
 #include "driver/gpio.h"
 #include "driver/uart.h"
 #include "esp_log.h"
@@ -7,6 +12,7 @@
 #include "freertos/queue.h"
 #include "freertos/semphr.h"
 #include "freertos/task.h"
+#include "oled_ssd1306.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -122,7 +128,8 @@ void ssd_task(void *pvParameters) {
 }
 
 void app_main(void) {
-  if (oled_init() != ESP_OK) {
+
+  if (oled_init(MY_SSD1306_SCL_PIN, MY_SSD1306_SDA_PIN) != ESP_OK) {
     ESP_LOGE(TAG, "OLED Core Engine Init Failed!");
     return;
   }
@@ -155,9 +162,8 @@ void app_main(void) {
     ESP_ERROR_CHECK(esp_sleep_enable_timer_wakeup(sleep_time_us));
     ESP_ERROR_CHECK(esp_sleep_enable_gpio_wakeup());
 
-    ESP_LOGI(
-        TAG,
-        "ESP32 Entering Light Sleep. Wait 30s OR press Button on GPIO 0 (boot button)...");
+    ESP_LOGI(TAG, "ESP32 Entering Light Sleep. Wait 30s OR press Button on "
+                  "GPIO 0 (boot button)...");
 
     // 完美兼容你环境中的单参数 5.3.1 串口物理冲刷标准
     uart_wait_tx_idle_polling(CONFIG_ESP_CONSOLE_UART_NUM);

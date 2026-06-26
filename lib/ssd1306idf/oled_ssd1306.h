@@ -3,13 +3,20 @@
 
 #include "esp_err.h"
 
-#define OLED_SDA_PIN 33
-#define OLED_SCL_PIN 32
+#ifndef OLED_SDA_PIN
+#define OLED_SDA_PIN 21 // 只有当没有定义过该宏时，默认值才为 33
+#endif
+
+#ifndef OLED_SCL_PIN
+#define OLED_SCL_PIN 22 // 只有当没有定义过该宏时，默认值才为 33
+#endif
+
 #define OLED_I2C_ADDR 0x3C
 #define OLED_WIDTH 128
 #define OLED_HEIGHT 64
 
-esp_err_t oled_init(void);
+esp_err_t oled_init(int scl_pin, int sda_pin);
+esp_err_t oled_init_default(void);
 void oled_clear(void);
 void oled_show_string(int x, int y, const char *str);
 void oled_refresh(void);

@@ -13,27 +13,30 @@ static esp_lcd_panel_handle_t panel_hdl = NULL;
 static i2c_master_bus_handle_t bus_hdl = NULL;
 static uint8_t fb[OLED_WIDTH * OLED_HEIGHT / 8] = {0};
 
-esp_err_t oled_init(void) {
+
+
+// Change the signature to accept scl_pin and sda_pin
+esp_err_t oled_init(int scl_pin, int sda_pin) {
   i2c_master_bus_config_t bus_cfg = {
-      .clk_source = I2C_CLK_SRC_DEFAULT,
-      .i2c_port = -1,
-      .scl_io_num = OLED_SCL_PIN,
-      .sda_io_num = OLED_SDA_PIN,
-      .glitch_ignore_cnt = 7,
-      .flags.enable_internal_pullup = true,
-  };
+    .clk_source = I2C_CLK_SRC_DEFAULT,
+    .i2c_port = -1,
+    .scl_io_num = scl_pin,  // Passed from outside
+    .sda_io_num = sda_pin,  // Passed from outside
+    .glitch_ignore_cnt = 7,
+    .flags.enable_internal_pullup = true,
+};
   if (i2c_new_master_bus(&bus_cfg, &bus_hdl) != ESP_OK)
     return ESP_FAIL;
 
   esp_lcd_panel_io_handle_t io_hdl = NULL;
   esp_lcd_panel_io_i2c_config_t io_cfg = {
-      .dev_addr = OLED_I2C_ADDR,
-      .scl_speed_hz = 400 * 1000,
-      .control_phase_bytes = 1,
-      .dc_bit_offset = 6,
-      .lcd_cmd_bits = 8,
-      .lcd_param_bits = 8,
-  };
+    .dev_addr = OLED_I2C_ADDR,
+    .scl_speed_hz = 400 * 1000,
+    .control_phase_bytes = 1,
+    .dc_bit_offset = 6,
+    .lcd_cmd_bits = 8,
+    .lcd_param_bits = 8,
+};
   if (esp_lcd_new_panel_io_i2c(bus_hdl, &io_cfg, &io_hdl) != ESP_OK)
     return ESP_FAIL;
 
@@ -46,6 +49,11 @@ esp_err_t oled_init(void) {
   esp_lcd_panel_init(panel_hdl);
   esp_lcd_panel_disp_on_off(panel_hdl, true);
   return ESP_OK;
+}
+
+
+esp_err_t oled_init_default (void) {
+  return oled_init(OLED_SCL_PIN, OLED_SDA_PIN);
 }
 
 void oled_clear(void) { memset(fb, 0, sizeof(fb)); }
@@ -149,8 +157,7 @@ void oled_sleep_exit(void) {
     ESP_LOGI(TAG, "OLED Awakened Successfully.");
   }
 }
-// 声明引用你的全局字库数组
-extern uint8_t font8x8_basic_tr[128][8];
+
 
 /**
  * @brief 支持自动换行（Text Wrap）与 \n 解析的 8x8 字符串通用显示函数
