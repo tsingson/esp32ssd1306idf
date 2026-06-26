@@ -119,11 +119,11 @@ void ssd_task(void *pvParameters) {
       // 🌟 第一个参数传入 -1，开启横向自动物理居中计算
       // 纵向坐标给 24 像素（在 64
       // 高度的屏幕上，16像素高的文字在纵向上也完美居中）
-      oled_show_string_16x16_bold(-1, 24, display_str);
+      oled_show_string_wrap(0, 20, display_str);
       oled_refresh();
 
       // 仿生动效：数字一登场，屏幕立刻剧烈抖动 120ms
-      oled_shake_screen(4, 120);
+      // oled_shake_screen(4, 120);
 
       // 精准时间对齐：扣除震动消耗的 120ms，静止维持 280ms，凑满 400ms
       // 最佳阅读周期
@@ -138,7 +138,8 @@ void ssd_task(void *pvParameters) {
     oled_clear();
     oled_show_string_ex(0, 0, "=== SYSTEM ===", 1);
     // 结束提示信息“SUCCESS!”同样传入 -1，优雅地在全屏正中央放大绽放
-    oled_show_string_16x16_bold(-1, 24, "SUCCESS!");
+    oled_show_string_wrap(-1, 20, "SUCCESS!");
+    vTaskDelay(pdMS_TO_TICKS(500));
     oled_refresh();
 
     // 释放信号，放行 main 线程去配置休眠寄存器

@@ -13,30 +13,28 @@ static esp_lcd_panel_handle_t panel_hdl = NULL;
 static i2c_master_bus_handle_t bus_hdl = NULL;
 static uint8_t fb[OLED_WIDTH * OLED_HEIGHT / 8] = {0};
 
-
-
 // Change the signature to accept scl_pin and sda_pin
 esp_err_t oled_init(int scl_pin, int sda_pin) {
   i2c_master_bus_config_t bus_cfg = {
-    .clk_source = I2C_CLK_SRC_DEFAULT,
-    .i2c_port = -1,
-    .scl_io_num = scl_pin,  // Passed from outside
-    .sda_io_num = sda_pin,  // Passed from outside
-    .glitch_ignore_cnt = 7,
-    .flags.enable_internal_pullup = true,
-};
+      .clk_source = I2C_CLK_SRC_DEFAULT,
+      .i2c_port = -1,
+      .scl_io_num = scl_pin, // Passed from outside
+      .sda_io_num = sda_pin, // Passed from outside
+      .glitch_ignore_cnt = 7,
+      .flags.enable_internal_pullup = true,
+  };
   if (i2c_new_master_bus(&bus_cfg, &bus_hdl) != ESP_OK)
     return ESP_FAIL;
 
   esp_lcd_panel_io_handle_t io_hdl = NULL;
   esp_lcd_panel_io_i2c_config_t io_cfg = {
-    .dev_addr = OLED_I2C_ADDR,
-    .scl_speed_hz = 400 * 1000,
-    .control_phase_bytes = 1,
-    .dc_bit_offset = 6,
-    .lcd_cmd_bits = 8,
-    .lcd_param_bits = 8,
-};
+      .dev_addr = OLED_I2C_ADDR,
+      .scl_speed_hz = 400 * 1000,
+      .control_phase_bytes = 1,
+      .dc_bit_offset = 6,
+      .lcd_cmd_bits = 8,
+      .lcd_param_bits = 8,
+  };
   if (esp_lcd_new_panel_io_i2c(bus_hdl, &io_cfg, &io_hdl) != ESP_OK)
     return ESP_FAIL;
 
@@ -51,8 +49,7 @@ esp_err_t oled_init(int scl_pin, int sda_pin) {
   return ESP_OK;
 }
 
-
-esp_err_t oled_init_default (void) {
+esp_err_t oled_init_default(void) {
   return oled_init(OLED_SCL_PIN, OLED_SDA_PIN);
 }
 
@@ -157,7 +154,6 @@ void oled_sleep_exit(void) {
     ESP_LOGI(TAG, "OLED Awakened Successfully.");
   }
 }
-
 
 /**
  * @brief 支持自动换行（Text Wrap）与 \n 解析的 8x8 字符串通用显示函数
@@ -589,19 +585,19 @@ void oled_show_string_16x16_bold(int start_x, int start_y, const char *str) {
   }
 }
 
-
-
-
-
-
 /**
- * @brief 绘制一个带有内部实时百分比数字的图形进度条控件 (Progress Bar with Percentage)
- * 升级版：将缓冲区扩大至 16 字节，完美解决 GCC 编译器的 format-truncation 警告错误
+ * @brief 绘制一个带有内部实时百分比数字的图形进度条控件 (Progress Bar with
+ * Percentage) 升级版：将缓冲区扩大至 16 字节，完美解决 GCC 编译器的
+ * format-truncation 警告错误
  */
-void oled_draw_progress_bar(int x, int y, int width, int height, int current, int max) {
-  if (max <= 0 || width <= 4 || height <= 4) return;
-  if (current > max) current = max;
-  if (current < 0) current = 0;
+void oled_draw_progress_bar(int x, int y, int width, int height, int current,
+                            int max) {
+  if (max <= 0 || width <= 4 || height <= 4)
+    return;
+  if (current > max)
+    current = max;
+  if (current < 0)
+    current = 0;
 
   // 1. 绘制进度条的外边框
   oled_draw_rectangle(x, y, width, height);
