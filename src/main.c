@@ -24,8 +24,7 @@
 #error "未知的目标芯片类型"
 #endif
 
-// Example 1: Using your new macro values
-#define MY_SSD1306_SCL_PIN 32
+
 
 #include "driver/gpio.h"
 #include "driver/uart.h"
