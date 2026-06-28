@@ -152,6 +152,8 @@ void ssd_task(void *pvParameters) {
 
 void app_main(void) {
 
+  vTaskDelay(pdMS_TO_TICKS(200));
+
   if (oled_init(PIN_I2C_SCL, PIN_I2C_SDA) != ESP_OK) {
     ESP_LOGE(TAG, "OLED Core Engine Init Failed!");
     return;
