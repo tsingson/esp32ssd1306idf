@@ -1,6 +1,6 @@
 #pragma once
 
-#define LV_COLOR_DEPTH 1              /* 单色屏必须为 1 */
+#define LV_COLOR_DEPTH 1 /* 单色屏必须为 1 */
 #define LV_HOR_RES_MAX 128
 #define LV_VER_RES_MAX 64
 #define LV_TICK_CUSTOM 1

@@ -1,109 +1,133 @@
 #include <stdio.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "driver/i2c.h"
 #include "esp_log.h"
 #include "esp_lcd_panel_io.h"
 #include "esp_lcd_panel_vendor.h"
-#include "esp_lvgl_port.h"
-#include "i2c_bus.h"                /* 提供 i2c_bus_create */
+#include "esp_lcd_panel_ops.h"
+#include "lvgl.h"
 
 static const char *TAG = "main";
 
-/* 硬件配置 */
-#define I2C_SDA        21
-#define I2C_SCL        22
-#define OLED_ADDRESS   0x3C
-#define SCREEN_WIDTH   128
-#define SCREEN_HEIGHT  64
+#define I2C_HOST           0
+#define PIN_I2C_SDA        21
+#define PIN_I2C_SCL        22
+#define LCD_PIXEL_CLOCK_HZ (400 * 1000)
+#define LCD_H_RES          128
+#define LCD_V_RES          64
 
-/* 用于演示的图片数据（16x16 笑脸，可替换） */
-LV_IMG_DECLARE(smile_img);
-static const uint8_t smile_map[] = {
-    0x00,0x00, 0x0F,0xF0, 0x18,0x18, 0x30,0x0C,
-    0x60,0x06, 0x6C,0x36, 0xCC,0x33, 0xCC,0x33,
-    0xCC,0x33, 0xCC,0x33, 0x6C,0x36, 0x60,0x06,
-    0x30,0x0C, 0x18,0x18, 0x0F,0xF0, 0x00,0x00
-};
-lv_img_dsc_t smile_img = {
-    .header.always_zero = 0,
-    .header.w = 16,
-    .header.h = 16,
-    .data_size = 16 * 16 * LV_IMG_PIXEL_ALPHA_BYTE,
-    .header.cf = LV_IMG_CF_TRUE_COLOR,
-    .data = smile_map,
-};
+// SSD1306 的 I2C 地址通常为 0x3C
+#define ESP_LCD_TOUCH_I2C_ADDRESS 0x3C
 
-void app_main(void)
-{
-    ESP_LOGI(TAG, "Start LVGL demo with SSD1306");
+// 声明外部图片数据 (由 LVGL 图片转换工具生成)
+LV_IMG_DECLARE(my_img_dsc);
 
-    /* 1. 创建 I2C 总线 */
-    i2c_config_t i2c_conf = {
+static bool notify_lvgl_flush_ready(esp_lcd_panel_io_handle_t panel_io, esp_lcd_panel_io_event_data_t *edata, void *user_ctx) {
+    lv_disp_drv_t *disp_driver = (lv_disp_drv_t *)user_ctx;
+    lv_disp_flush_ready(disp_driver);
+    return false;
+}
+
+static void lvgl_flush_cb(lv_disp_drv_t *drv, const lv_area_t *area, lv_color_t *color_map) {
+    esp_lcd_panel_handle_t panel_handle = (esp_lcd_panel_handle_t) drv->user_data;
+    int offsetx1 = area->x1;
+    int offsetx2 = area->x2;
+    int offsety1 = area->y1;
+    int offsety2 = area->y2;
+    // 将 LVGL 缓冲区数据拷贝到 OLED 屏幕
+    esp_lcd_panel_draw_bitmap(panel_handle, offsetx1, offsety1, offsetx2 + 1, offsety2 + 1, color_map);
+}
+
+static void increase_lvgl_tick(void *arg) {
+    /* 告诉 LVGL 过去了多少毫秒 */
+    lv_tick_inc(2);
+}
+
+void app_main(void) {
+    ESP_LOGI(TAG, "Initializing I2C Bus...");
+    i2c_config_t conf = {
         .mode = I2C_MODE_MASTER,
-        .sda_io_num = I2C_SDA,
-        .scl_io_num = I2C_SCL,
+        .sda_io_num = PIN_I2C_SDA,
+        .scl_io_num = PIN_I2C_SCL,
         .sda_pullup_en = GPIO_PULLUP_ENABLE,
         .scl_pullup_en = GPIO_PULLUP_ENABLE,
-        .master.clk_speed = 400000,
+        .master.clk_speed = LCD_PIXEL_CLOCK_HZ,
     };
-    i2c_bus_handle_t i2c_bus = i2c_bus_create(&i2c_conf);
-    assert(i2c_bus != NULL);
+    ESP_ERROR_CHECK(i2c_param_config(I2C_HOST, &conf));
+    ESP_ERROR_CHECK(i2c_driver_install(I2C_HOST, conf.mode, 0, 0, 0));
 
-    /* 2. 创建 LCD 面板 I/O 句柄 (I2C) */
+    ESP_LOGI(TAG, "Installing panel IO...");
     esp_lcd_panel_io_handle_t io_handle = NULL;
     esp_lcd_panel_io_i2c_config_t io_config = {
-        .dev_addr = OLED_ADDRESS,
-        .scl_speed_hz = 400000,
+        .dev_addr = ESP_LCD_TOUCH_I2C_ADDRESS,
         .control_phase_bytes = 1,
         .dc_bit_offset = 6,
+        .lcd_cmd_bits = 8,
+        .lcd_param_bits = 8,
+        .on_color_trans_done = notify_lvgl_flush_ready,
     };
-    ESP_ERROR_CHECK(esp_lcd_new_panel_io_i2c(i2c_bus, &io_config, &io_handle));
 
-    /* 3. 创建 SSD1306 面板驱动 */
+    // 创建 SSD1306 Panel IO 句柄
+    ESP_ERROR_CHECK(esp_lcd_new_panel_io_i2c((esp_lcd_i2c_bus_handle_t)I2C_HOST, &io_config, &io_handle));
+
+    ESP_LOGI(TAG, "Installing SSD1306 driver...");
     esp_lcd_panel_handle_t panel_handle = NULL;
-    esp_lcd_panel_ssd1306_config_t panel_config = {
-        .width = SCREEN_WIDTH,
-        .height = SCREEN_HEIGHT,
+    esp_lcd_panel_dev_config_t panel_config = {
+        .bits_per_pixel = 1, // 单色屏
+        .reset_gpio_num = -1, // 如果有复位引脚填对应数字，没有填 -1
     };
+
+    // 使用官方标准的 SSD1306 驱动初始化
     ESP_ERROR_CHECK(esp_lcd_new_panel_ssd1306(io_handle, &panel_config, &panel_handle));
     ESP_ERROR_CHECK(esp_lcd_panel_reset(panel_handle));
     ESP_ERROR_CHECK(esp_lcd_panel_init(panel_handle));
     ESP_ERROR_CHECK(esp_lcd_panel_disp_on_off(panel_handle, true));
 
-    /* 4. 初始化 LVGL 库 */
-    const esp_lvgl_port_config_t lvgl_cfg = {
-        .task_priority = 2,
-        .task_stack = 4096,
-        .task_affinity = 0,
-        .timer_period_ms = 10,
+    ESP_LOGI(TAG, "Initializing LVGL library...");
+    lv_init();
+
+    // 分配 LVGL 显存缓冲区 (单色屏建议分配全屏大小)
+    lv_color_t *buf1 = malloc(LCD_H_RES * LCD_V_RES * sizeof(lv_color_t));
+    assert(buf1 != NULL);
+
+    static lv_disp_draw_buf_t disp_buf;
+    lv_disp_draw_buf_init(&disp_buf, buf1, NULL, LCD_H_RES * LCD_V_RES);
+
+    static lv_disp_drv_t disp_drv;
+    lv_disp_drv_init(&disp_drv);
+    disp_drv.hor_res = LCD_H_RES;
+    disp_drv.ver_res = LCD_V_RES;
+    disp_drv.flush_cb = lvgl_flush_cb;
+    disp_drv.draw_buf = &disp_buf;
+    disp_drv.user_data = panel_handle;
+    lv_disp_drv_register(&disp_drv);
+
+    ESP_LOGI(TAG, "Registering LVGL tick timer...");
+    // 建立 2ms 的定时器为 LVGL 提供时钟步进
+    const esp_timer_create_args_t lvgl_tick_timer_args = {
+        .callback = &increase_lvgl_tick,
+        .name = "lvgl_tick"
     };
-    ESP_ERROR_CHECK(esp_lvgl_port_init(&lvgl_cfg));
+    esp_timer_handle_t lvgl_tick_timer = NULL;
+    ESP_ERROR_CHECK(esp_timer_create(&lvgl_tick_timer_args, &lvgl_tick_timer));
+    ESP_ERROR_CHECK(esp_timer_start_periodic(lvgl_tick_timer, 2000)); // 2000us = 2ms
 
-    /* 5. 注册显示驱动到 LVGL */
-    const esp_lvgl_port_display_cfg_t disp_cfg = {
-        .panel_handle = panel_handle,
-        .buffer_size = SCREEN_WIDTH * SCREEN_HEIGHT,   // 单色每像素1字节
-        .double_buffer = false,
-    };
-    esp_lvgl_port_register_display(&disp_cfg);
+    ESP_LOGI(TAG, "Creating UI Elements...");
 
-    /* 6. 启动 LVGL 时钟（必须） */
-    esp_lvgl_port_tick_init();
-
-    /* 7. 创建 UI（必须在锁保护下） */
-    lv_lock();
-
-    /* ---- 显示文字 ---- */
+    /* 1. 显示一行文字 */
     lv_obj_t *label = lv_label_create(lv_scr_act());
-    lv_label_set_text(label, "Hello ESP-IDF!");
-    lv_obj_align(label, NULL, LV_ALIGN_CENTER, 0, -20);
+    lv_label_set_text(label, "Hello ESP32 & LVGL");
+    lv_obj_align(label, LV_ALIGN_TOP_MID, 0, 5);
 
-    /* ---- 显示图片 ---- */
+    /* 2. 显示一张图片 */
     lv_obj_t *img = lv_img_create(lv_scr_act());
-    lv_img_set_src(img, &smile_img);
-    lv_obj_align(img, NULL, LV_ALIGN_CENTER, 0, 20);
+    lv_img_set_src(img, &my_img_dsc);
+    lv_obj_align(img, LV_ALIGN_BOTTOM_MID, 0, -5);
 
-    lv_unlock();
-
-    ESP_LOGI(TAG, "UI created, running...");
+    ESP_LOGI(TAG, "Running LVGL loop...");
+    while (1) {
+        vTaskDelay(pdMS_TO_TICKS(10));
+        lv_timer_handler(); // 处理 LVGL 任务
+    }
 }

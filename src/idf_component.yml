@@ -1,0 +1,2 @@
+dependencies:
+  espressif/lvgl: "^8.3.11"
