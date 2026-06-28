@@ -1,107 +1,211 @@
-#include <stdio.h>
-#include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
-#include "esp_timer.h"
-#include "esp_lcd_panel_io.h"
-#include "esp_lcd_panel_vendor.h"
-#include "esp_lcd_panel_ops.h"
-#include "driver/i2c_master.h" // 更改为新版 I2C 主机驱动
-#include "esp_err.h"
+//
+// Created by tsingson on 2026/6/26.
+//
+
+#include "sdkconfig.h"
+
+#ifdef CONFIG_IDF_TARGET_ESP32
+// ESP32 经典款引脚定义
+#define PIN_I2C_SDA 21
+#define PIN_I2C_SCL 22
+#define PIN_GPS_TX 17
+#define PIN_GPS_RX 16
+#define PIN_4G_TX 25
+#define PIN_4G_RX 26
+#elif defined CONFIG_IDF_TARGET_ESP32C3
+// ESP32-C3 引脚定义
+#define PIN_I2C_SDA 4
+#define PIN_I2C_SCL 5
+#define PIN_GPS_TX 6
+#define PIN_GPS_RX 7
+#define PIN_4G_TX 18
+#define PIN_4G_RX 19
+#else
+#error "未知的目标芯片类型"
+#endif
+
+
+
+#include "driver/gpio.h"
+#include "driver/uart.h"
 #include "esp_log.h"
+#include "esp_sleep.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/queue.h"
+#include "freertos/semphr.h"
+#include "freertos/task.h"
+#include "oled_ssd1306.h"
+#include <stdio.h>
+#include <string.h>
 
 static const char *TAG = "main";
 
-// 物理接线管脚设定
-#define PIN_NUM_SDA           33  // 确保屏幕 SDA 接入 GPIO 21
-#define PIN_NUM_SCL           32  // 确保屏幕 SCL 接入 GPIO 22
-#define PIN_NUM_RST           -1  // 无 Reset 引脚填 -1
+// 硬件唤醒按键管脚定义（推荐使用 GPIO 4，外接一个按键到地 GND）
+#define WAKEUP_BUTTON_GPIO 0
 
-#define LCD_PIXEL_CLOCK_HZ    (400 * 1000) // 400kHz
-#define LCD_H_RES             128
-#define LCD_V_RES             64
-#define SSD1306_I2C_ADDRESS   0x3C
+// FreeRTOS 句柄
+static QueueHandle_t data_queue = NULL;
+static SemaphoreHandle_t display_done_sem = NULL;
+static TaskHandle_t ssd_task_handle = NULL;
 
-// 基础 8x16 字符点阵
-const uint8_t font_8x16_H[] = {0x00,0x00,0xE0,0x07,0xE0,0x07,0x00,0x00,0x00,0x00,0xE0,0x07,0xE0,0x07,0x00,0x00};
-const uint8_t font_8x16_e[] = {0x00,0x00,0x00,0x03,0xC0,0x05,0x40,0x05,0x40,0x05,0xC0,0x05,0x80,0x02,0x00,0x00};
-const uint8_t font_8x16_l[] = {0x00,0x00,0xE0,0x07,0xE0,0x07,0x00,0x04,0x00,0x04,0x00,0x00,0x00,0x00,0x00,0x00};
-const uint8_t font_8x16_o[] = {0x00,0x00,0x00,0x03,0x80,0x04,0x80,0x04,0x80,0x04,0x80,0x04,0x00,0x03,0x00,0x00};
-const uint8_t font_8x16_W[] = {0x00,0x01,0xE0,0x07,0xE0,0x06,0x00,0x01,0x00,0x01,0xE0,0x06,0xE0,0x07,0x00,0x01};
-const uint8_t font_8x16_r[] = {0x00,0x00,0x00,0x07,0x00,0x07,0x00,0x04,0x00,0x04,0x00,0x04,0x00,0x00,0x00,0x00};
-const uint8_t font_8x16_d[] = {0x00,0x00,0x00,0x03,0x80,0x04,0x80,0x04,0x00,0x04,0xE0,0x07,0xE0,0x07,0x00,0x00};
-const uint8_t font_8x16_sp[] = {0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00};
+/**
+ * @brief 配置唤醒按键的 GPIO 硬件属性
+ */
+static void configure_wakeup_button(void) {
+  gpio_config_t btn_config = {
+      .pin_bit_mask = (1ULL << WAKEUP_BUTTON_GPIO),
+      .mode = GPIO_MODE_INPUT,
+      .pull_up_en = GPIO_PULLUP_ENABLE, // 启用内部上拉电阻，默认高电平
+      .pull_down_en = GPIO_PULLDOWN_DISABLE,
+      .intr_type = GPIO_INTR_DISABLE // 休眠唤醒不需要开启普通 GPIO 中断
+  };
+  ESP_ERROR_CHECK(gpio_config(&btn_config));
 
-static uint8_t screen_buffer[LCD_H_RES * LCD_V_RES / 8] = {0};
-
-void draw_char_8x16(int x, int y, const uint8_t *font_glyph) {
-    for (int col = 0; col < 8; col++) {
-        if ((x + col) >= LCD_H_RES) break;
-        uint8_t byte1 = font_glyph[col * 2];
-        uint8_t byte2 = font_glyph[col * 2 + 1];
-        int page1 = y / 8;
-        int page2 = page1 + 1;
-        if (page1 < 8) screen_buffer[page1 * LCD_H_RES + (x + col)] |= byte1;
-        if (page2 < 8) screen_buffer[page2 * LCD_H_RES + (x + col)] |= byte2;
-    }
+  // 使能该 GPIO 的低功耗微安级硬件唤醒功能
+  ESP_ERROR_CHECK(gpio_wakeup_enable(WAKEUP_BUTTON_GPIO, GPIO_INTR_LOW_LEVEL));
 }
 
-void app_main(void)
-{
-    ESP_LOGI(TAG, "Initializing New I2C Bus Master...");
-    i2c_master_bus_handle_t i2c_bus = NULL;
-    i2c_master_bus_config_t bus_config = {
-        .clk_source = I2C_CLK_SRC_DEFAULT,
-        .i2c_port = -1, // 自动选择空闲端口
-        .scl_io_num = PIN_NUM_SCL,
-        .sda_io_num = PIN_NUM_SDA,
-        .glitch_ignore_cnt = 7,
-        .flags.enable_internal_pullup = true, // 启用内部弱上拉作双重保险
-    };
-    ESP_ERROR_CHECK(i2c_new_master_bus(&bus_config, &i2c_bus));
+/**
+ * @brief SSD 屏幕数据处理与渲染任务
+ * 逻辑链路：进度条满 -> 全屏闪烁转场 -> 切换至 16x16 巨型粗体 ＋
+ * 横向坐标自动居中 ＋ 伴随强震动
+ */
+void ssd_task(void *pvParameters) {
+  int received_val = 0;
+  // 🌟 严格核对：正确定义包含 10
+  // 个物理空间的整型本地缓冲区数组，解决越界编译错误
+  int data_buffer[10] = {0};
+  // 🌟 严格核对：正确定义 32 字节大小的字符数组，彻底解决 snprintf 和 ESP_LOGI
+  // 报错
+  char display_str[32] = {0};
 
-    ESP_LOGI(TAG, "Installing panel IO via New I2C driver...");
-    esp_lcd_panel_io_handle_t io_handle = NULL;
-    esp_lcd_panel_io_i2c_config_t io_config = {
-        .dev_addr = SSD1306_I2C_ADDRESS,
-        .scl_speed_hz = LCD_PIXEL_CLOCK_HZ,
-        .control_phase_bytes = 1,
-        .dc_bit_offset = 6,
-        .lcd_cmd_bits = 8,
-        .lcd_param_bits = 8,
-    };
-    // 使用新版 i2c_bus 句柄创建底层 IO
-    ESP_ERROR_CHECK(esp_lcd_new_panel_io_i2c(i2c_bus, &io_config, &io_handle));
+  while (1) {
+    // ==========================================================
+    // 阶段一：进度条加载阶段 (只缓存数据，数字暂不登场)
+    // ==========================================================
+    for (int i = 1; i <= 10; i++) {
+      if (xQueueReceive(data_queue, &received_val, portMAX_DELAY) == pdTRUE) {
+        // 安全存入本地临时数组
+        data_buffer[i - 1] = received_val;
+        ESP_LOGI(TAG, "Queue buffered [%d]: %d", i - 1, received_val);
 
-    ESP_LOGI(TAG, "Installing SSD1306 driver panel...");
-    esp_lcd_panel_handle_t panel_handle = NULL;
-    esp_lcd_panel_dev_config_t panel_config = {
-        .bits_per_pixel = 1,
-        .reset_gpio_num = PIN_NUM_RST,
-    };
+        oled_clear();
+        oled_show_string_ex(0, 0, "=== SYSTEM ===", 1);
+        oled_show_string_ex(0, 20, "Buffering data...", 0);
 
-    ESP_ERROR_CHECK(esp_lcd_new_panel_ssd1306(io_handle, &panel_config, &panel_handle));
-    ESP_ERROR_CHECK(esp_lcd_panel_reset(panel_handle));
-    ESP_ERROR_CHECK(esp_lcd_panel_init(panel_handle));
-    ESP_ERROR_CHECK(esp_lcd_panel_disp_on_off(panel_handle, true));
+        // 进度条顺次递增渲染
+        oled_draw_progress_bar(0, 44, 128, 12, i, 10);
+        oled_refresh();
 
-    ESP_LOGI(TAG, "Clearing buffer and drawing 'Hello World'...");
-    draw_char_8x16(20, 24, font_8x16_H);
-    draw_char_8x16(28, 24, font_8x16_e);
-    draw_char_8x16(36, 24, font_8x16_l);
-    draw_char_8x16(44, 24, font_8x16_l);
-    draw_char_8x16(52, 24, font_8x16_o);
-    draw_char_8x16(60, 24, font_8x16_sp);
-    draw_char_8x16(68, 24, font_8x16_W);
-    draw_char_8x16(76, 24, font_8x16_o);
-    draw_char_8x16(84, 24, font_8x16_r);
-    draw_char_8x16(92, 24, font_8x16_l);
-    draw_char_8x16(100, 24, font_8x16_d);
-
-    ESP_LOGI(TAG, "Refreshing screen display data...");
-    ESP_ERROR_CHECK(esp_lcd_panel_draw_bitmap(panel_handle, 0, 0, LCD_H_RES, LCD_V_RES, screen_buffer));
-
-    ESP_LOGI(TAG, "Done. Loop waiting.");
-    while (1) {
-        vTaskDelay(pdMS_TO_TICKS(1000));
+        vTaskDelay(pdMS_TO_TICKS(200));
+      }
     }
+
+    // 物理转场：进度条拉满瞬间，触发全屏反色轰炸特效（持续 60 毫秒）
+    oled_flash_screen(1, 60);
+
+    // ==========================================================
+    // 阶段二：数字轮播显示阶段 (进度条彻底隐藏，大字绝对自动居中轰炸)
+    // ==========================================================
+    for (int j = 0; j < 10; j++) {
+      // 此时 display_str 作为合法指针传入，格式化与打印绝对安全
+      snprintf(display_str, sizeof(display_str), "RCV:%d", data_buffer[j]);
+      ESP_LOGI(TAG, "OLED Print Center Bold: %s", display_str);
+
+      oled_clear();
+      oled_show_string_ex(0, 0, "=== SYSTEM ===", 1);
+
+      // 🌟 第一个参数传入 -1，开启横向自动物理居中计算
+      // 纵向坐标给 24 像素（在 64
+      // 高度的屏幕上，16像素高的文字在纵向上也完美居中）
+      oled_show_string_wrap(0, 20, display_str);
+      oled_refresh();
+
+      // 仿生动效：数字一登场，屏幕立刻剧烈抖动 120ms
+      // oled_shake_screen(4, 120);
+
+      // 精准时间对齐：扣除震动消耗的 120ms，静止维持 280ms，凑满 400ms
+      // 最佳阅读周期
+      vTaskDelay(pdMS_TO_TICKS(280));
+    }
+
+    // ==========================================================
+    // 结束收尾：保持最终画面 2 秒后，同步释放信号量并挂起
+    // ==========================================================
+    vTaskDelay(pdMS_TO_TICKS(2000));
+
+    oled_clear();
+    oled_show_string_ex(0, 0, "=== SYSTEM ===", 1);
+    // 结束提示信息“SUCCESS!”同样传入 -1，优雅地在全屏正中央放大绽放
+    oled_show_string_wrap(-1, 20, "SUCCESS!");
+    vTaskDelay(pdMS_TO_TICKS(500));
+    oled_refresh();
+
+    // 释放信号，放行 main 线程去配置休眠寄存器
+    xSemaphoreGive(display_done_sem);
+
+    // 自我挂起：静等 main 下个周期唤醒
+    ESP_LOGI(TAG, "SSD Task layout sequence done. Suspending...");
+    vTaskSuspend(NULL);
+  }
+}
+
+void app_main(void) {
+
+  vTaskDelay(pdMS_TO_TICKS(200));
+
+  if (oled_init(PIN_I2C_SCL, PIN_I2C_SDA) != ESP_OK) {
+    ESP_LOGE(TAG, "OLED Core Engine Init Failed!");
+    return;
+  }
+
+  configure_wakeup_button();
+
+  data_queue = xQueueCreate(10, sizeof(int));
+  display_done_sem = xSemaphoreCreateBinary();
+
+  if (data_queue == NULL || display_done_sem == NULL) {
+    ESP_LOGE(TAG, "Failed to create OS primitives!");
+    return;
+  }
+
+  xTaskCreate(ssd_task, "ssd_task", 3072, NULL, 5, &ssd_task_handle);
+
+  while (1) {
+    ESP_LOGI(TAG, "Starting new processing cycle...");
+
+    for (int val = 1; val <= 10; val++) {
+      xQueueSend(data_queue, &val, portMAX_DELAY);
+    }
+
+    xSemaphoreTake(display_done_sem, portMAX_DELAY);
+
+    ESP_LOGI(TAG, "Putting OLED to hardware sleep mode...");
+    oled_sleep_enter();
+
+    uint64_t sleep_time_us = 30ULL * 1000ULL * 1000ULL;
+    ESP_ERROR_CHECK(esp_sleep_enable_timer_wakeup(sleep_time_us));
+    ESP_ERROR_CHECK(esp_sleep_enable_gpio_wakeup());
+
+    ESP_LOGI(TAG, "ESP32 Entering Light Sleep. Wait 30s OR press Button on "
+                  "GPIO 0 (boot button)...");
+
+    // 完美兼容你环境中的单参数 5.3.1 串口物理冲刷标准
+    uart_wait_tx_idle_polling(CONFIG_ESP_CONSOLE_UART_NUM);
+
+    esp_light_sleep_start();
+
+    // 判定唤醒源
+    esp_sleep_wakeup_cause_t cause = esp_sleep_get_wakeup_cause();
+    if (cause == ESP_SLEEP_WAKEUP_GPIO) {
+      ESP_LOGI(TAG, "Woke up by EXTERNAL BUTTON!");
+    } else {
+      ESP_LOGI(TAG, "Woke up by TIMER!");
+    }
+
+    oled_sleep_exit();
+
+    ESP_LOGI(TAG, "Resuming SSD Task...");
+    vTaskResume(ssd_task_handle);
+  }
 }
